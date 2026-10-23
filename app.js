@@ -2,7 +2,7 @@
 // pieces joined by feature matching, upload straight into the Dropbox _Eingang with an offline queue.
 (function(){
 'use strict';
-const VERSION='1.9';
+const VERSION='1.10';
 const CFG=Object.assign({dropboxAppKey:'',ziel:'/_artedge eU/bookdesk/_Eingang'},window.BELEG_CONFIG||{});
 const $=id=>document.getElementById(id);
 const pad=n=>String(n).padStart(2,'0');
@@ -130,6 +130,10 @@ $('torch').addEventListener('click',()=>{if(!track)return;torchOn=!torchOn;
 $('shutter').addEventListener('click',()=>{if(running&&video.videoWidth)capture(false);else $('pick').click();});
 
 function withCorners(r){if(r&&!r.q)r.q=[[r.x0,r.y0],[r.x1,r.y0],[r.x1,r.y1],[r.x0,r.y1]];return r;}
+// Etwas mehr Rand um den erkannten Zettel: lieber zu groß als zu klein, nachbearbeitet wird ohnehin.
+const PAD=.035;
+function padded(r){if(!r||!r.found)return r;r=Object.assign({},r);
+  r.q=r.q.map(([x,y],i)=>[Math.min(1,Math.max(0,x+(i===0||i===3?-PAD:PAD))),Math.min(1,Math.max(0,y+(i<2?-PAD:PAD)))]);return r;}
 function capture(isAuto){
   running=false;clearTimeout(loopT);
   const W=video.videoWidth,H=video.videoHeight,c=document.createElement('canvas');c.width=W;c.height=H;
@@ -137,13 +141,13 @@ function capture(isAuto){
   $('flash').classList.remove('on');void $('flash').offsetWidth;$('flash').classList.add('on');
   let r;try{r=withCorners(BelegDetect.detect(c,W,H,480));}catch(e){r=null;}
   if(!r||!r.found)r=live?Object.assign({},live):{q:[[0,0],[1,0],[1,1],[0,1]],found:false};
-  openReview(c,r,isAuto);
+  openReview(c,padded(r),isAuto);
 }
 $('pick').addEventListener('change',e=>{const f=e.target.files[0];e.target.value='';if(!f)return;
   const im=new Image(),u=URL.createObjectURL(f);
   im.onload=()=>{const c=document.createElement('canvas');c.width=im.naturalWidth;c.height=im.naturalHeight;c.getContext('2d').drawImage(im,0,0);URL.revokeObjectURL(u);
     let r;try{r=withCorners(BelegDetect.detect(c,c.width,c.height,480));}catch(err){r=withCorners({x0:0,y0:0,x1:1,y1:1,found:false});}
-    running=false;clearTimeout(loopT);openReview(c,r,false);};
+    running=false;clearTimeout(loopT);openReview(c,padded(r),false);};
   im.onerror=()=>toast('Das Foto ließ sich nicht öffnen.');im.src=u;});
 
 function backToCamera(){
