@@ -2,7 +2,7 @@
 // pieces joined by feature matching, upload straight into the Dropbox _Eingang with an offline queue.
 (function(){
 'use strict';
-const VERSION='1.6';
+const VERSION='1.7';
 const CFG=Object.assign({dropboxAppKey:'',ziel:'/_artedge eU/bookdesk/_Eingang'},window.BELEG_CONFIG||{});
 const $=id=>document.getElementById(id);
 const pad=n=>String(n).padStart(2,'0');
@@ -70,9 +70,11 @@ function loop(){
     // and count the receipt as steady when most recent frames agree with it and the picture is calm.
     const raw=r.found?r:null;
     if(raw){
-      if(!smooth||iou(raw,smooth)<.5){jumps++;if(!smooth||jumps>=2){smooth=Object.assign({},raw,{q:raw.q.map(p=>p.slice())});jumps=0;}}
-      else{jumps=0;['x0','y0','x1','y1'].forEach(k=>smooth[k]+=.35*(raw[k]-smooth[k]));
-        smooth.q.forEach((p,i)=>{p[0]+=.35*(raw.q[i][0]-p[0]);p[1]+=.35*(raw.q[i][1]-p[1]);});}
+      // a different place only counts after 4 frames in a row; small changes (under ~1.5 %) are ignored
+      if(!smooth||iou(raw,smooth)<.5){jumps++;if(!smooth||jumps>=4){smooth=Object.assign({},raw,{q:raw.q.map(p=>p.slice())});jumps=0;}}
+      else{jumps=0;const dev=Math.max(...raw.q.map((p,i)=>Math.max(Math.abs(p[0]-smooth.q[i][0]),Math.abs(p[1]-smooth.q[i][1]))));
+        if(dev>.015){['x0','y0','x1','y1'].forEach(k=>smooth[k]+=.2*(raw[k]-smooth[k]));
+          smooth.q.forEach((p,i)=>{p[0]+=.2*(raw.q[i][0]-p[0]);p[1]+=.2*(raw.q[i][1]-p[1]);});}}
     }
     frames.push({t:t0,r:raw,motion});if(frames.length>5)frames.shift();
     const found=frames.filter(f=>f.r).length;
@@ -97,10 +99,16 @@ function drawLive(p){
   octx.clearRect(0,0,innerWidth,innerHeight);
   $('ring').setAttribute('stroke-dashoffset',String(232.5*(1-p)));
   if(!live)return;
+  // thin outline plus short corner angles, as in 1.4
   const pts=live.q.map(([x,y])=>toScreen(x,y));
   octx.beginPath();pts.forEach(([x,y],i)=>i?octx.lineTo(x,y):octx.moveTo(x,y));octx.closePath();
-  octx.fillStyle='rgba(255,195,0,'+(0.06+0.14*p)+')';octx.fill();
-  octx.lineWidth=3;octx.strokeStyle='#FFC300';octx.lineJoin='round';octx.stroke();
+  octx.fillStyle='rgba(255,195,0,'+(0.04+0.12*p)+')';octx.fill();
+  octx.lineWidth=1;octx.strokeStyle='rgba(255,195,0,.55)';octx.stroke();
+  octx.lineWidth=3;octx.strokeStyle='#FFC300';octx.lineCap='square';octx.beginPath();
+  pts.forEach(([x,y],i)=>{const n=pts[(i+1)%4],pv=pts[(i+3)%4];
+    const seg=(t)=>{const dx=t[0]-x,dy=t[1]-y,l=Math.hypot(dx,dy)||1,L=Math.min(26,l/3);return [x+dx/l*L,y+dy/l*L];};
+    const a=seg(n),b=seg(pv);octx.moveTo(a[0],a[1]);octx.lineTo(x,y);octx.lineTo(b[0],b[1]);});
+  octx.stroke();
 }
 function hintLive(armed,holding){
   const k=pieces.length,pre=k?'<span class="piece">Stück '+(k+1)+':</span> ':'';

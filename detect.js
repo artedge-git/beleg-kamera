@@ -48,7 +48,13 @@
     let k=0;for(let y=bb[1];y<=bb[3];y++)for(let x=bb[0];x<=bb[2];x++)if(L(y*w+x))k++;
     const q=corners(L,c.x0,c.y0,c.x1,c.y1,w);
     const fill=k/(bw*bh),touch=(bb[0]<=1)+(bb[1]<=1)+(bb[2]>=w-2)+(bb[3]>=h-2);
-    return {bb,q,area,fill,touch,score:fill*(1-.25*touch)*(area>.85?.3:1)};
+    // contrast against a ring around the box: the receipt is clearly brighter than the floor or table,
+    // a pale wooden board next to darker boards is not
+    const rw=Math.max(3,Math.round(.03*Math.max(w,h)));let si=0,ni=0,so=0,no=0;
+    for(let y=Math.max(0,bb[1]-rw);y<=Math.min(h-1,bb[3]+rw);y++)for(let x=Math.max(0,bb[0]-rw);x<=Math.min(w-1,bb[2]+rw);x++){
+      const inside=x>=bb[0]&&x<=bb[2]&&y>=bb[1]&&y<=bb[3];if(inside){si+=lum[y*w+x];ni++;}else{so+=lum[y*w+x];no++;}}
+    const contrast=no?si/ni-so/no:0;
+    return {bb,q,area,fill,touch,contrast,score:fill*(1-.25*touch)*(area>.85?.3:1)*Math.min(1.5,Math.max(.1,contrast/50))};
   }
   function textBox(lum,w,h){
     // integral image for a 9x9 local mean; ink = clearly darker than its surroundings
@@ -91,10 +97,10 @@
     const n=w*h,lum=new Uint8Array(n),sat=new Uint8Array(n);
     for(let i=0;i<n;i++){const r=d[i*4],g=d[i*4+1],b=d[i*4+2];lum[i]=Math.round(.299*r+.587*g+.114*b);sat[i]=Math.max(r,g,b)-Math.min(r,g,b);}
     const sorted=Array.from(lum).sort((a,b)=>a-b),pct=p=>sorted[Math.min(n-1,Math.floor(n*p/100))];
-    const ts=new Set([Math.max(110,otsu(lum))]);[60,70,80,88].forEach(p=>ts.add(Math.max(110,pct(p))));
+    const ts=new Set([Math.max(110,otsu(lum))]);[60,70,80,88,93,96].forEach(p=>ts.add(Math.max(110,pct(p))));
     let best=null;for(const t of ts){const cd=paperCand(lum,sat,t,w,h);if(cd&&(!best||cd.score>best.score))best=cd;}
     let bb,m,mode,q=null;
-    if(best&&best.fill>=.9&&best.touch===0&&best.area<=.5){bb=best.bb;m=.01;mode='papier';
+    if(best&&best.fill>=.9&&best.touch===0&&best.area<=.5&&best.contrast>=25){bb=best.bb;m=.01;mode='papier';
       if(best.q&&quadArea(best.q)>=.85*(bb[2]-bb[0]+1)*(bb[3]-bb[1]+1))q=best.q;}
     else{bb=textBox(lum,w,h);m=.04;mode='text';
       const ta=bb?(bb[2]-bb[0]+1)*(bb[3]-bb[1]+1)/n:1;
