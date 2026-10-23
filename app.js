@@ -2,7 +2,7 @@
 // pieces joined by feature matching, upload straight into the Dropbox _Eingang with an offline queue.
 (function(){
 'use strict';
-const VERSION='1.10';
+const VERSION='1.11';
 const CFG=Object.assign({dropboxAppKey:'',ziel:'/_artedge eU/bookdesk/_Eingang'},window.BELEG_CONFIG||{});
 const $=id=>document.getElementById(id);
 const pad=n=>String(n).padStart(2,'0');
@@ -73,7 +73,7 @@ function loop(){
       // a different place only counts after 4 frames in a row; small changes (under ~1.5 %) are ignored
       if(!smooth||iou(raw,smooth)<.5){jumps++;if(!smooth||jumps>=3){smooth=Object.assign({},raw,{q:raw.q.map(p=>p.slice())});jumps=0;}}
       else{jumps=0;const dev=Math.max(...raw.q.map((p,i)=>Math.max(Math.abs(p[0]-smooth.q[i][0]),Math.abs(p[1]-smooth.q[i][1]))));
-        if(dev>.01){['x0','y0','x1','y1'].forEach(k=>smooth[k]+=.3*(raw[k]-smooth[k]));
+        if(dev>.015){['x0','y0','x1','y1'].forEach(k=>smooth[k]+=.3*(raw[k]-smooth[k]));
           smooth.q.forEach((p,i)=>{p[0]+=.3*(raw.q[i][0]-p[0]);p[1]+=.3*(raw.q[i][1]-p[1]);});}}
     }
     frames.push({t:t0,r:raw,motion});if(frames.length>5)frames.shift();
@@ -81,8 +81,8 @@ function loop(){
     if(found===0)smooth=null;
     live=smooth&&raw?smooth:(smooth&&found>=3?smooth:null);
     if(needMotion&&motion>12)needMotion=false;
-    const agree=smooth?frames.filter(f=>f.r&&iou(f.r,smooth)>.75).length:0;
-    const mm=frames.slice(-4).map(f=>f.motion).sort((a,b)=>a-b),med=mm[Math.floor(mm.length/2)],calm=med<22;
+    const agree=smooth?frames.filter(f=>f.r&&iou(f.r,smooth)>.7).length:0;
+    const mm=frames.slice(-4).map(f=>f.motion).sort((a,b)=>a-b),med=mm[Math.floor(mm.length/2)],calm=med<28;
     const steady=!!live&&frames.length>=3&&agree>=3&&calm;
     if(dbgOn){const dt=frames.length>1?(frames[frames.length-1].t-frames[0].t)/(frames.length-1):0;
       $('dbg').textContent=(dt?Math.round(1000/dt):0)+' B/s · Bewegung '+med.toFixed(0)+(calm?' ruhig':' unruhig')+' · erkannt '+found+'/5 · passt '+agree+' · '+(raw?raw.mode:'-')+' · '+(auto?(needMotion?'wartet auf Bewegung':'scharf'):'Auto aus')+' · '+video.videoWidth+'×'+video.videoHeight;}
@@ -102,8 +102,8 @@ function drawLive(p){
   // thin outline plus short corner angles, as in 1.4
   const pts=live.q.map(([x,y])=>toScreen(x,y));
   octx.beginPath();pts.forEach(([x,y],i)=>i?octx.lineTo(x,y):octx.moveTo(x,y));octx.closePath();
-  octx.fillStyle='rgba(255,195,0,'+(0.04+0.12*p)+')';octx.fill();
-  octx.lineWidth=1;octx.strokeStyle='rgba(255,195,0,.55)';octx.stroke();
+  octx.fillStyle='rgba(255,195,0,'+(0.05+0.25*p)+')';octx.fill();
+  octx.lineWidth=1+p;octx.strokeStyle='rgba(255,195,0,'+(.55+.45*p)+')';octx.stroke();
   octx.lineWidth=3;octx.strokeStyle='#FFC300';octx.lineCap='square';octx.beginPath();
   pts.forEach(([x,y],i)=>{const n=pts[(i+1)%4],pv=pts[(i+3)%4];
     const seg=(t)=>{const dx=t[0]-x,dy=t[1]-y,l=Math.hypot(dx,dy)||1,L=Math.min(26,l/3);return [x+dx/l*L,y+dy/l*L];};
