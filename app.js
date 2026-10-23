@@ -2,7 +2,7 @@
 // pieces joined by feature matching, upload straight into the Dropbox _Eingang with an offline queue.
 (function(){
 'use strict';
-const VERSION='1.2';
+const VERSION='1.3';
 const CFG=Object.assign({dropboxAppKey:'',ziel:'/_artedge eU/bookdesk/_Eingang'},window.BELEG_CONFIG||{});
 const $=id=>document.getElementById(id);
 const pad=n=>String(n).padStart(2,'0');
@@ -18,7 +18,7 @@ function screen(name){['cam','review','sheet'].forEach(s=>$(s).hidden=s!==name);
 // ---------------------------------------------------------------- camera
 const video=$('vf'),ov=$('ov'),octx=ov.getContext('2d');
 let stream=null,track=null,running=false,auto=store.get('auto',true);
-let live=null,frames=[],stableSince=0,needMotion=false,armAt=0,prevLum=null,loopT=0;
+let live=null,smooth=null,jumps=0,frames=[],stableSince=0,needMotion=false,armAt=0,prevLum=null,loopT=0;
 let pieces=[];             // canvases of the pieces of the current receipt, already cropped
 let shot=null,rect=null;   // the captured frame under review and its crop (fractions)
 
@@ -66,12 +66,24 @@ function loop(){
     const motion=prevLum?diff/lum.length:99;prevLum=lum;
     let r;try{r=BelegDetect.detectData(d,w,h);}catch(e){r={found:false};}
     if(r.found&&(r.x1-r.x0)*(r.y1-r.y0)<.05)r.found=false;
-    live=r.found?r:null;
+    // Detection on a hand-held phone flickers from frame to frame: show and judge a smoothed frame,
+    // and count the receipt as steady when most recent frames agree with it and the picture is calm.
+    const raw=r.found?r:null;
+    if(raw){
+      if(!smooth||iou(raw,smooth)<.5){jumps++;if(!smooth||jumps>=2){smooth=Object.assign({},raw);jumps=0;}}
+      else{jumps=0;['x0','y0','x1','y1'].forEach(k=>smooth[k]+=.35*(raw[k]-smooth[k]));}
+    }
+    frames.push({t:t0,r:raw,motion});if(frames.length>6)frames.shift();
+    const found=frames.filter(f=>f.r).length;
+    if(found===0)smooth=null;
+    live=smooth&&raw?smooth:(smooth&&found>=3?smooth:null);
     if(needMotion&&motion>12)needMotion=false;
-    const prev=frames[frames.length-1];frames.push({t:t0,r:live,motion});if(frames.length>8)frames.shift();
-    const steady=live&&prev&&prev.r&&iou(live,prev.r)>.9&&motion<7;
+    const agree=smooth?frames.filter(f=>f.r&&iou(f.r,smooth)>.75).length:0;
+    const calm=frames.slice(-4).map(f=>f.motion).sort((a,b)=>a-b)[1]<14;
+    const steady=live&&frames.length>=4&&agree>=Math.min(4,frames.length-1)&&calm;
+    if(location.hash==='#debug')console.log('dbg',JSON.stringify({m:+motion.toFixed(1),raw:raw&&raw.mode,found,agree,calm}));
     if(steady){if(!stableSince)stableSince=t0;}else stableSince=0;
-    const held=stableSince?t0-stableSince:0,need=850;
+    const held=stableSince?t0-stableSince:0,need=700;
     const armed=auto&&!needMotion&&t0>=armAt;
     drawLive(armed?Math.min(1,held/need):0);
     hintLive(armed,held>0);
@@ -125,7 +137,7 @@ $('pick').addEventListener('change',e=>{const f=e.target.files[0];e.target.value
 
 function backToCamera(){
   shot=null;screen('cam');handles.forEach(h=>h.remove());handles=[];showThumbs();
-  needMotion=true;armAt=performance.now()+900;stableSince=0;frames=[];
+  needMotion=true;armAt=performance.now()+900;stableSince=0;frames=[];smooth=null;
   if(stream&&track&&track.readyState==='live'){running=true;loop();}else startCamera();
 }
 function showThumbs(){const t=$('thumbs');t.textContent='';
