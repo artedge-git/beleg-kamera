@@ -36,43 +36,33 @@
     return A?[A,B,[C[0]+1,C[1]+1],D]:null;
   }
   function quadArea(q){let s=0;for(let i=0;i<4;i++){const [x1,y1]=q[i],[x2,y2]=q[(i+1)%4];s+=x1*y2-x2*y1;}return Math.abs(s)/2;}
-  function paperCand(lum,sat,t,w,h){
-    const n=w*h,m=new Uint8Array(n);for(let i=0;i<n;i++)m[i]=(lum[i]>t&&sat[i]<70)?1:0;
-    const {lab,comps}=label(morph(m,w,h,1,1,true),w,h);if(!comps.length)return null;
-    const c=comps[0],L=i=>lab[i]===c.id,bb=[c.x0,c.y0,c.x1,c.y1];
-    const fc=x=>{let k=0,t2=0;for(let y=bb[1];y<=bb[3];y++){t2++;if(L(y*w+x))k++;}return k/t2;};
-    const fr=y=>{let k=0,t2=0;for(let x=bb[0];x<=bb[2];x++){t2++;if(L(y*w+x))k++;}return k/t2;};
-    while(bb[2]-bb[0]>10&&fc(bb[0])<.45)bb[0]++;while(bb[2]-bb[0]>10&&fc(bb[2])<.45)bb[2]--;
-    while(bb[3]-bb[1]>10&&fr(bb[1])<.45)bb[1]++;while(bb[3]-bb[1]>10&&fr(bb[3])<.45)bb[3]--;
-    const bw=bb[2]-bb[0]+1,bh=bb[3]-bb[1]+1,area=bw*bh/n;if(area<.03)return null;
-    let k=0;for(let y=bb[1];y<=bb[3];y++)for(let x=bb[0];x<=bb[2];x++)if(L(y*w+x))k++;
-    const q=corners(L,c.x0,c.y0,c.x1,c.y1,w);
-    const fill=k/(bw*bh),touch=(bb[0]<=1)+(bb[1]<=1)+(bb[2]>=w-2)+(bb[3]>=h-2);
-    // contrast against a ring around the box: the receipt is clearly brighter than the floor or table,
-    // a pale wooden board next to darker boards is not
-    const rw=Math.max(3,Math.round(.03*Math.max(w,h)));let si=0,ni=0,so=0,no=0;
-    for(let y=Math.max(0,bb[1]-rw);y<=Math.min(h-1,bb[3]+rw);y++)for(let x=Math.max(0,bb[0]-rw);x<=Math.min(w-1,bb[2]+rw);x++){
-      const inside=x>=bb[0]&&x<=bb[2]&&y>=bb[1]&&y<=bb[3];if(inside){si+=lum[y*w+x];ni++;}else{so+=lum[y*w+x];no++;}}
-    const contrast=no?si/ni-so/no:0;
-    return {bb,q,area,fill,touch,contrast,score:fill*(1-.25*touch)*(area>.85?.3:1)*Math.min(1.5,Math.max(.1,contrast/50))};
-  }
+  let lastInk=null,INK=14;
   function textBox(lum,w,h){
     // integral image for a 9x9 local mean; ink = clearly darker than its surroundings
     const I=new Float64Array((w+1)*(h+1));
     for(let y=0;y<h;y++){let r=0;for(let x=0;x<w;x++){r+=lum[y*w+x];I[(y+1)*(w+1)+x+1]=I[y*(w+1)+x+1]+r;}}
     const ink=new Uint8Array(w*h),R=4;
     for(let y=0;y<h;y++)for(let x=0;x<w;x++){const a=Math.max(0,x-R),b=Math.max(0,y-R),c=Math.min(w,x+R+1),d=Math.min(h,y+R+1);
-      const mean=(I[d*(w+1)+c]-I[b*(w+1)+c]-I[d*(w+1)+a]+I[b*(w+1)+a])/((c-a)*(d-b));ink[y*w+x]=(mean-lum[y*w+x])>22?1:0;}
+      const mean=(I[d*(w+1)+c]-I[b*(w+1)+c]-I[d*(w+1)+a]+I[b*(w+1)+a])/((c-a)*(d-b));
+      // 3x3 mean instead of the single pixel: sensor noise and fabric grain stop counting as print
+      const a3=Math.max(0,x-1),b3=Math.max(0,y-1),c3=Math.min(w,x+2),d3=Math.min(h,y+2);
+      const m3=(I[d3*(w+1)+c3]-I[b3*(w+1)+c3]-I[d3*(w+1)+a3]+I[b3*(w+1)+a3])/((c3-a3)*(d3-b3));
+      ink[y*w+x]=(mean-m3)>INK?1:0;}
+    lastInk=ink;
     let blk=morph(morph(ink,w,h,7,4,true),w,h,7,4,false);blk=morph(blk,w,h,2,2,true);
     const {comps}=label(blk,w,h);if(!comps.length)return null;
-    const b0=comps[0];let x0=b0.x0,y0=b0.y0,x1=b0.x1,y1=b0.y1;
-    for(const c of comps.slice(1,30)){if(c.cnt<b0.cnt*.02)break;
+    // the block of print: big, densely inked (not a long table edge) and near the middle
+    let b0=comps[0],bs=-1;
+    for(const c of comps.slice(0,12)){let k=0;for(let y=c.y0;y<=c.y1;y++)for(let x=c.x0;x<=c.x1;x++)k+=ink[y*w+x];
+      const bw=c.x1-c.x0+1,bh=c.y1-c.y0+1,dens=k/(bw*bh),cx=(c.x0+c.x1)/2/w-.5,cy=(c.y0+c.y1)/2/h-.5;
+      const sc=Math.sqrt(c.cnt)*Math.min(1,dens/.05)*(1-.7*Math.min(1,Math.hypot(cx*1.2,cy*.8)/.5))*(Math.min(bw,bh)<4?.2:1);
+      if(sc>bs){bs=sc;b0=c;}}
+    let x0=b0.x0,y0=b0.y0,x1=b0.x1,y1=b0.y1;
+    for(const c of comps.slice(0,30)){if(c===b0)continue;if(c.cnt<b0.cnt*.02)break;
       const cw=c.x1-c.x0,ov=Math.min(x1,c.x1)-Math.max(x0,c.x0);
       if(ov>.5*cw&&cw<1.3*(x1-x0+1)){y0=Math.min(y0,c.y0);y1=Math.max(y1,c.y1);x0=Math.min(x0,c.x0);x1=Math.max(x1,c.x1);}}
     return [x0,y0,x1,y1];
   }
-  // (c) bright vertical strip at the centre of the picture: for cluttered tables where the
-  // receipt touches other papers. The receipt is the one Chris aims at.
   function projBox(lum,sat,t,w,h){
     const n=w*h;let m=new Uint8Array(n);for(let i=0;i<n;i++)m[i]=(lum[i]>t&&sat[i]<70)?1:0;
     m=morph(morph(m,w,h,1,3,true),w,h,1,3,false);
@@ -91,28 +81,68 @@
     let k=0;for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++)k+=m[y*w+x];
     return {bb:[x0,y0,x1,y1],fill:k/((x1-x0+1)*(y1-y0+1))};
   }
-  // d: RGBA pixels of a w×h picture (already small, about 320–480 px on the long side).
-  // Returns the receipt as fractions of the picture {x0,y0,x1,y1,found}.
-  function detectData(d,w,h){
-    const n=w*h,lum=new Uint8Array(n),sat=new Uint8Array(n);
-    for(let i=0;i<n;i++){const r=d[i*4],g=d[i*4+1],b=d[i*4+2];lum[i]=Math.round(.299*r+.587*g+.114*b);sat[i]=Math.max(r,g,b)-Math.min(r,g,b);}
-    const sorted=Array.from(lum).sort((a,b)=>a-b),pct=p=>sorted[Math.min(n-1,Math.floor(n*p/100))];
-    const ts=new Set([Math.max(110,otsu(lum))]);[60,70,80,88,93,96].forEach(p=>ts.add(Math.max(110,pct(p))));
-    let best=null;for(const t of ts){const cd=paperCand(lum,sat,t,w,h);if(cd&&(!best||cd.score>best.score))best=cd;}
-    let bb,m,mode,q=null;
-    if(best&&best.fill>=.9&&best.touch===0&&best.area<=.5&&best.contrast>=25){bb=best.bb;m=.01;mode='papier';
-      if(best.q&&quadArea(best.q)>=.85*(bb[2]-bb[0]+1)*(bb[3]-bb[1]+1))q=best.q;}
-    else{bb=textBox(lum,w,h);m=.04;mode='text';
-      const ta=bb?(bb[2]-bb[0]+1)*(bb[3]-bb[1]+1)/n:1;
-      if(ta>.55){let pb=null;for(const t of ts){const p=projBox(lum,sat,t,w,h);if(p&&(!pb||p.fill>pb.fill))pb=p;}
-        if(pb&&pb.fill>=.75){bb=pb.bb;m=.015;mode='streifen';}}
-      if(!bb)return {x0:0,y0:0,x1:1,y1:1,found:false,mode:'keiner'};}
-    const r={x0:Math.max(0,bb[0]/w-m),y0:Math.max(0,bb[1]/h-m),x1:Math.min(1,(bb[2]+1)/w+m),y1:Math.min(1,(bb[3]+1)/h+m),found:true,mode};
-    if((r.x1-r.x0)*(r.y1-r.y0)>.92||(r.x1-r.x0)*(r.y1-r.y0)<.02)r.found=false;
-    // corners as fractions, pushed outward from the centre by the same margin
-    if(!q)q=[[bb[0],bb[1]],[bb[2]+1,bb[1]],[bb[2]+1,bb[3]+1],[bb[0],bb[3]+1]];
+
+  // Candidates for "the receipt": bright paper regions at several thresholds, the block of print, and a
+  // bright strip in the middle. Each is scored on how a receipt looks: compact, clearly brighter than
+  // its surroundings, filled with print, near the middle. Tuned on Chris's photos Jun–Oct 2026
+  // (white paper, wooden floor, grey table, car seat).
+  function detectData(d,w,h,dbg){
+    const n=w*h,lum=new Uint8Array(n),sat=new Uint8Array(n),wh=new Uint8Array(n);
+    for(let i=0;i<n;i++){const r=d[i*4],g=d[i*4+1],b=d[i*4+2];lum[i]=Math.round(.299*r+.587*g+.114*b);sat[i]=Math.max(r,g,b)-Math.min(r,g,b);
+      wh[i]=Math.max(0,lum[i]-(sat[i]>>1));}
+    const tb=textBox(lum,w,h),ink=lastInk;
+    const II=new Float64Array((w+1)*(h+1));
+    for(let y=0;y<h;y++){let r=0;for(let x=0;x<w;x++){r+=ink[y*w+x];II[(y+1)*(w+1)+x+1]=II[y*(w+1)+x+1]+r;}}
+    const inkIn=(x0,y0,x1,y1)=>{x0=Math.max(0,x0);y0=Math.max(0,y0);x1=Math.min(w,x1+1);y1=Math.min(h,y1+1);
+      return x1>x0&&y1>y0?(II[y1*(w+1)+x1]-II[y0*(w+1)+x1]-II[y1*(w+1)+x0]+II[y0*(w+1)+x0]):0;};
+    const totalInk=inkIn(0,0,w-1,h-1)||1;
+    const sorted=Array.from(wh).sort((a,b)=>a-b),pct=p=>sorted[Math.min(n-1,Math.floor(n*p/100))];
+    const cands=[];
+    const centre=bb=>{const cx=(bb[0]+bb[2])/2/w-.5,cy=(bb[1]+bb[3])/2/h-.5;return 1-.7*Math.min(1,Math.hypot(cx*1.2,cy*.8)/.5);};
+    const judge=(bb,fill,kind,q)=>{
+      const bw=bb[2]-bb[0]+1,bh=bb[3]-bb[1]+1,area=bw*bh/n;if(area<.02||area>.85)return;
+      const rw=Math.max(3,Math.round(.025*Math.max(w,h)));let si=0,ni=0,so=0,no=0;
+      for(let y=Math.max(0,bb[1]-rw);y<=Math.min(h-1,bb[3]+rw);y+=1)for(let x=Math.max(0,bb[0]-rw);x<=Math.min(w-1,bb[2]+rw);x+=1){
+        const inside=x>=bb[0]&&x<=bb[2]&&y>=bb[1]&&y<=bb[3];if(inside){si+=lum[y*w+x];ni++;}else{so+=lum[y*w+x];no++;}}
+      const contrast=no>20?si/ni-so/no:40;
+      const inkHere=inkIn(bb[0],bb[1],bb[2],bb[3]),dens=inkHere/(bw*bh),share=inkHere/totalInk;
+      const side=(bb[0]<=1)+(bb[2]>=w-2);
+      const C=Math.min(1,Math.max(0,(contrast-15)/40)),ctr=centre(bb);
+      let sc;
+      if(kind==='text')sc=.55*ctr*Math.min(1,dens/.04)*Math.min(1,share/.4);
+      else sc=fill*fill*C*ctr*(side?.6:1)*(area>.6?.5:1)*(dens>.015?1:.4);
+      cands.push({bb,q,kind,sc,fill,contrast,dens,share,area});};
+    for(const p of [55,65,75,82,88,93,96]){const t=Math.max(60,pct(p));
+      let m=new Uint8Array(n);for(let i=0;i<n;i++)m[i]=wh[i]>t?1:0;
+      m=morph(morph(m,w,h,1,1,false),w,h,1,1,true);
+      const {lab,comps}=label(m,w,h);
+      for(const c of comps.slice(0,4)){if(c.cnt<.015*n)break;
+        const L=i=>lab[i]===c.id,bb=[c.x0,c.y0,c.x1,c.y1];
+        const fc=x=>{let k=0,t2=0;for(let y=bb[1];y<=bb[3];y++){t2++;if(L(y*w+x))k++;}return k/t2;};
+        const fr=y=>{let k=0,t2=0;for(let x=bb[0];x<=bb[2];x++){t2++;if(L(y*w+x))k++;}return k/t2;};
+        while(bb[2]-bb[0]>10&&fc(bb[0])<.45)bb[0]++;while(bb[2]-bb[0]>10&&fc(bb[2])<.45)bb[2]--;
+        while(bb[3]-bb[1]>10&&fr(bb[1])<.45)bb[1]++;while(bb[3]-bb[1]>10&&fr(bb[3])<.45)bb[3]--;
+        let k=0;for(let y=bb[1];y<=bb[3];y++)for(let x=bb[0];x<=bb[2];x++)if(L(y*w+x))k++;
+        // print is dark, so count it as paper when it sits inside the region
+        const fill=Math.min(1,(k+inkIn(bb[0],bb[1],bb[2],bb[3]))/((bb[2]-bb[0]+1)*(bb[3]-bb[1]+1)));
+        const q=corners(L,c.x0,c.y0,c.x1,c.y1,w),qa=q?quadArea(q):0;
+        // a tilted receipt: the corners describe it well, so keep its full extent instead of the trimmed box
+        if(q&&qa>0&&(c.cnt+inkIn(c.x0,c.y0,c.x1,c.y1))/qa>=.85&&qa<.97*(c.x1-c.x0+1)*(c.y1-c.y0+1))
+          judge([c.x0,c.y0,c.x1,c.y1],Math.min(1,(c.cnt+inkIn(c.x0,c.y0,c.x1,c.y1))/qa),'papier',q);
+        else judge(bb,fill,'papier',q&&qa>=.85*(bb[2]-bb[0]+1)*(bb[3]-bb[1]+1)?q:null);}}
+    if(tb){const mx=Math.round(.03*w),my=Math.round(.02*h);judge([Math.max(0,tb[0]-mx),Math.max(0,tb[1]-my),Math.min(w-1,tb[2]+mx),Math.min(h-1,tb[3]+my)],.95,'text',null);}
+    const ts=[otsu(lum),...[70,80,88].map(p=>Array.from(lum).sort((a,b)=>a-b)[Math.floor(n*p/100)])];
+    for(const t of ts){const p=projBox(lum,sat,Math.max(110,t),w,h);if(p)judge(p.bb,p.fill,'streifen',null);}
+    cands.sort((a,b)=>b.sc-a.sc);if(dbg)dbg.push(...cands.slice(0,6));
+    // a clearly outlined paper wins outright: its edge is exact, the print block may catch grain or creases
+    const strong=cands.find(c=>c.kind!=='text'&&c.sc>=.35);
+    const best=strong||cands[0];
+    if(!best||best.sc<.08)return {x0:0,y0:0,x1:1,y1:1,found:false,mode:'keiner',q:[[0,0],[1,0],[1,1],[0,1]]};
+    const bb=best.bb,m=best.kind==='text'?.02:.012;
+    const r={x0:Math.max(0,bb[0]/w-m),y0:Math.max(0,bb[1]/h-m),x1:Math.min(1,(bb[2]+1)/w+m),y1:Math.min(1,(bb[3]+1)/h+m),found:true,mode:best.kind,score:best.sc};
+    let q=best.q||[[bb[0],bb[1]],[bb[2]+1,bb[1]],[bb[2]+1,bb[3]+1],[bb[0],bb[3]+1]];
     const cx=(q[0][0]+q[1][0]+q[2][0]+q[3][0])/4,cy=(q[0][1]+q[1][1]+q[2][1]+q[3][1])/4;
-    r.q=q.map(([x,y])=>{const dx=x-cx,dy=y-cy;return [Math.min(1,Math.max(0,(x+Math.sign(dx)*m*w)/w)),Math.min(1,Math.max(0,(y+Math.sign(dy)*m*h)/h))];});
+    r.q=q.map(([x,y])=>[Math.min(1,Math.max(0,(x+Math.sign(x-cx)*m*w)/w)),Math.min(1,Math.max(0,(y+Math.sign(y-cy)*m*h)/h))]);
     return r;
   }
   // src: image, video or canvas; W,H its pixel size

@@ -2,7 +2,7 @@
 // pieces joined by feature matching, upload straight into the Dropbox _Eingang with an offline queue.
 (function(){
 'use strict';
-const VERSION='1.7';
+const VERSION='1.8';
 const CFG=Object.assign({dropboxAppKey:'',ziel:'/_artedge eU/bookdesk/_Eingang'},window.BELEG_CONFIG||{});
 const $=id=>document.getElementById(id);
 const pad=n=>String(n).padStart(2,'0');
