@@ -2,7 +2,7 @@
 // pieces joined by feature matching, upload straight into the Dropbox _Eingang with an offline queue.
 (function(){
 'use strict';
-const VERSION='1.1';
+const VERSION='1.2';
 const CFG=Object.assign({dropboxAppKey:'',ziel:'/_artedge eU/bookdesk/_Eingang'},window.BELEG_CONFIG||{});
 const $=id=>document.getElementById(id);
 const pad=n=>String(n).padStart(2,'0');
@@ -342,6 +342,6 @@ $('ziel').textContent=CFG.ziel;$('ver').textContent=VERSION;
   if(!Dropbox.connected()&&CFG.dropboxAppKey&&!store.get('verlauf',[]).length){renderConn();screen('sheet');}
   else startCamera();
   Sync.run();
-  if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+  if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).catch(()=>{});
 })();
 })();
