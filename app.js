@@ -2,7 +2,7 @@
 // pieces joined by feature matching, upload straight into the Dropbox _Eingang with an offline queue.
 (function(){
 'use strict';
-const VERSION='1.0';
+const VERSION='1.1';
 const CFG=Object.assign({dropboxAppKey:'',ziel:'/_artedge eU/bookdesk/_Eingang'},window.BELEG_CONFIG||{});
 const $=id=>document.getElementById(id);
 const pad=n=>String(n).padStart(2,'0');
@@ -245,14 +245,13 @@ const Dropbox=(()=>{
   const standalone=()=>(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;
   const redirectUri=()=>location.origin+location.pathname;
   const tok=()=>store.get('dbx',null);
-  async function begin(){
-    const v=b64u(crypto.getRandomValues(new Uint8Array(48)));store.set('dbx_verifier',v);
+  // The authorize link is prepared ahead of the tap: iOS only opens a new window straight from a tap,
+  // and a home-screen app opens Dropbox in a separate browser sheet that does not share storage,
+  // so Dropbox shows a code to paste back instead of redirecting.
+  async function prepare(){
+    let v=store.get('dbx_verifier','');if(!v){v=b64u(crypto.getRandomValues(new Uint8Array(48)));store.set('dbx_verifier',v);}
     const ch=b64u(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(v)));
-    const p=new URLSearchParams({client_id:CFG.dropboxAppKey,response_type:'code',code_challenge:ch,code_challenge_method:'S256',token_access_type:'offline'});
-    // A home-screen app on iOS opens Dropbox in a separate browser sheet that does not share storage,
-    // so there Dropbox shows a code to paste back instead of redirecting.
-    if(standalone()){store.set('dbx_mode','code');window.open('https://www.dropbox.com/oauth2/authorize?'+p,'_blank');return 'code';}
-    p.set('redirect_uri',redirectUri());store.set('dbx_mode','redirect');location.href='https://www.dropbox.com/oauth2/authorize?'+p;return 'redirect';
+    return 'https://www.dropbox.com/oauth2/authorize?'+new URLSearchParams({client_id:CFG.dropboxAppKey,response_type:'code',code_challenge:ch,code_challenge_method:'S256',token_access_type:'offline'});
   }
   async function exchange(code,withRedirect){
     const p=new URLSearchParams({code:code.trim(),grant_type:'authorization_code',client_id:CFG.dropboxAppKey,code_verifier:store.get('dbx_verifier','')});
@@ -283,7 +282,7 @@ const Dropbox=(()=>{
     }
     throw Object.assign(new Error('nicht verbunden'),{code:'auth'});
   }
-  return {begin,exchange,upload,connected:()=>!!tok(),disconnect:()=>store.del('dbx'),standalone};
+  return {prepare,exchange,upload,connected:()=>!!tok(),disconnect:()=>store.del('dbx'),standalone};
 })();
 
 const Sync=(()=>{
@@ -318,12 +317,13 @@ function renderConn(){
   $('connText').textContent=!CFG.dropboxAppKey?'Der Dropbox-App-Schlüssel fehlt noch in config.js. Bis dahin bleiben Belege auf dem Handy in der Warteschlange.':
     c?'Verbunden. Belege landen direkt in '+CFG.ziel+'.':'Noch nicht verbunden. Aufnehmen geht trotzdem, die Belege warten auf dem Handy.';
   $('connect').hidden=c||!CFG.dropboxAppKey;$('disconnect').hidden=!c;
-  $('codeBox').hidden=c||store.get('dbx_mode','')!=='code'||!store.get('dbx_verifier','');
+  $('codeBox').hidden=c||store.get('dbx_mode','')!=='code';
+  if(!c&&CFG.dropboxAppKey)Dropbox.prepare().then(u=>{$('connect').href=u;}).catch(()=>{});
 }
 $('hist').addEventListener('click',()=>{stopLoopOnly();renderHistory();renderConn();screen('sheet');});
 function stopLoopOnly(){running=false;clearTimeout(loopT);}
 $('close').addEventListener('click',backToCamera);
-$('connect').addEventListener('click',async()=>{const m=await Dropbox.begin();if(m==='code')renderConn();});
+$('connect').addEventListener('click',e=>{if(!$('connect').href){e.preventDefault();return;}store.set('dbx_mode','code');setTimeout(renderConn,300);});
 $('codeOk').addEventListener('click',async()=>{const v=$('code').value;if(!v.trim())return;
   busy('Verbinde mit Dropbox …');try{await Dropbox.exchange(v,false);$('code').value='';toast('Dropbox verbunden.');Sync.run();}
   catch(e){toast('Das hat nicht geklappt: '+e.message+'. Bitte noch einmal verbinden.',5000);store.del('dbx_mode');}

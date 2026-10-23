@@ -162,9 +162,9 @@ input[type=file]{position:absolute;width:1px;height:1px;opacity:0;pointer-events
     <div class="card" id="conn">
       <h2 style="margin:0">Dropbox</h2>
       <p id="connText">…</p>
-      <button class="btn btn-primary" id="connect" type="button" hidden>Mit Dropbox verbinden</button>
+      <a class="btn btn-primary" id="connect" target="_blank" rel="noopener" hidden>Mit Dropbox verbinden</a>
       <div id="codeBox" hidden style="display:flex;flex-direction:column;gap:10px">
-        <p>Dropbox zeigt nach dem Erlauben einen Code an. Kopiere ihn und füge ihn hier ein.</p>
+        <p>Dropbox zeigt nach dem Erlauben einen Code an. Kopiere ihn, schließe das Dropbox-Fenster und füge den Code hier ein.</p>
         <input id="code" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Code aus Dropbox">
         <button class="btn btn-primary" id="codeOk" type="button">Verbinden</button>
       </div>
