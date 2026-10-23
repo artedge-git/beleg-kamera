@@ -2,7 +2,7 @@
 // pieces joined by feature matching, upload straight into the Dropbox _Eingang with an offline queue.
 (function(){
 'use strict';
-const VERSION='1.4';
+const VERSION='1.5';
 const CFG=Object.assign({dropboxAppKey:'',ziel:'/_artedge eU/bookdesk/_Eingang'},window.BELEG_CONFIG||{});
 const $=id=>document.getElementById(id);
 const pad=n=>String(n).padStart(2,'0');
@@ -20,7 +20,7 @@ const video=$('vf'),ov=$('ov'),octx=ov.getContext('2d');
 let stream=null,track=null,running=false,auto=store.get('auto',true);
 let dbgOn=store.get('dbg',false),dbgTaps=0,live=null,smooth=null,jumps=0,frames=[],stableSince=0,needMotion=false,armAt=0,prevLum=null,loopT=0;
 let pieces=[];             // canvases of the pieces of the current receipt, already cropped
-let shot=null,rect=null;   // the captured frame under review and its crop (fractions)
+let shot=null,quad=null;   // the captured frame under review and the receipt's corners TL,TR,BR,BL (fractions)
 
 async function startCamera(){
   $('camerr').hidden=true;$('hint').textContent='Kamera wird gestartet …';
@@ -70,8 +70,9 @@ function loop(){
     // and count the receipt as steady when most recent frames agree with it and the picture is calm.
     const raw=r.found?r:null;
     if(raw){
-      if(!smooth||iou(raw,smooth)<.5){jumps++;if(!smooth||jumps>=2){smooth=Object.assign({},raw);jumps=0;}}
-      else{jumps=0;['x0','y0','x1','y1'].forEach(k=>smooth[k]+=.35*(raw[k]-smooth[k]));}
+      if(!smooth||iou(raw,smooth)<.5){jumps++;if(!smooth||jumps>=2){smooth=Object.assign({},raw,{q:raw.q.map(p=>p.slice())});jumps=0;}}
+      else{jumps=0;['x0','y0','x1','y1'].forEach(k=>smooth[k]+=.35*(raw[k]-smooth[k]));
+        smooth.q.forEach((p,i)=>{p[0]+=.35*(raw.q[i][0]-p[0]);p[1]+=.35*(raw.q[i][1]-p[1]);});}
     }
     frames.push({t:t0,r:raw,motion});if(frames.length>5)frames.shift();
     const found=frames.filter(f=>f.r).length;
@@ -96,12 +97,10 @@ function drawLive(p){
   octx.clearRect(0,0,innerWidth,innerHeight);
   $('ring').setAttribute('stroke-dashoffset',String(232.5*(1-p)));
   if(!live)return;
-  const [ax,ay]=toScreen(live.x0,live.y0),[bx,by]=toScreen(live.x1,live.y1);
-  const accent='#FFC300';octx.lineWidth=3;octx.strokeStyle=accent;
-  octx.fillStyle='rgba(255,195,0,'+(0.06+0.14*p)+')';octx.fillRect(ax,ay,bx-ax,by-ay);
-  const L=Math.min(28,(bx-ax)/3,(by-ay)/3);octx.beginPath();
-  [[ax,ay,1,1],[bx,ay,-1,1],[ax,by,1,-1],[bx,by,-1,-1]].forEach(([x,y,sx,sy])=>{octx.moveTo(x+sx*L,y);octx.lineTo(x,y);octx.lineTo(x,y+sy*L);});
-  octx.stroke();octx.lineWidth=1;octx.strokeStyle='rgba(255,195,0,.55)';octx.strokeRect(ax,ay,bx-ax,by-ay);
+  const pts=live.q.map(([x,y])=>toScreen(x,y));
+  octx.beginPath();pts.forEach(([x,y],i)=>i?octx.lineTo(x,y):octx.moveTo(x,y));octx.closePath();
+  octx.fillStyle='rgba(255,195,0,'+(0.06+0.14*p)+')';octx.fill();
+  octx.lineWidth=3;octx.strokeStyle='#FFC300';octx.lineJoin='round';octx.stroke();
 }
 function hintLive(armed,holding){
   const k=pieces.length,pre=k?'<span class="piece">Stück '+(k+1)+':</span> ':'';
@@ -128,7 +127,7 @@ function capture(isAuto){
   c.getContext('2d').drawImage(video,0,0,W,H);
   $('flash').classList.remove('on');void $('flash').offsetWidth;$('flash').classList.add('on');
   let r;try{r=BelegDetect.detect(c,W,H,480);}catch(e){r=null;}
-  if(!r||!r.found)r=live?Object.assign({},live):{x0:0,y0:0,x1:1,y1:1,found:false};
+  if(!r||!r.found)r=live?Object.assign({},live):{q:[[0,0],[1,0],[1,1],[0,1]],found:false};
   openReview(c,r,isAuto);
 }
 $('pick').addEventListener('change',e=>{const f=e.target.files[0];e.target.value='';if(!f)return;
@@ -152,9 +151,9 @@ function showThumbs(){const t=$('thumbs');t.textContent='';
 // ---------------------------------------------------------------- review and crop
 const cv=$('cv'),ctx=cv.getContext('2d'),stage=$('stage');let handles=[],geo=null;
 function openReview(c,r,isAuto){
-  shot=c;rect={x0:r.x0,y0:r.y0,x1:r.x1,y1:r.y1};screen('review');
+  shot=c;quad=(r.q||[[0,0],[1,0],[1,1],[0,1]]).map(p=>p.slice());screen('review');
   const k=pieces.length;
-  $('rnote').innerHTML=(k?'<b>Stück '+(k+1)+'</b> · ':'')+(r.found?'Rahmen passt? Sonst die gelben Punkte ziehen.':'Kein Zettel erkannt. Zieh die gelben Punkte an die Ecken.');
+  $('rnote').innerHTML=(k?'<b>Stück '+(k+1)+'</b> · ':'')+(r.found?'Ecken passen? Sonst die gelben Punkte ziehen. Der Zettel wird gerade gezogen.':'Kein Zettel erkannt. Zieh die gelben Punkte an die vier Ecken.');
   $('send').textContent=k?'Alle '+(k+1)+' Stücke senden':'Senden';
   makeHandles();requestAnimationFrame(drawReview);
 }
@@ -164,29 +163,48 @@ function drawReview(){
   const dpr=Math.min(2,devicePixelRatio||1),ox=Math.round((sw-dw)/2),oy=Math.round((sh-dh)/2);geo={ox,oy,dw,dh};
   cv.style.left=ox+'px';cv.style.top=oy+'px';cv.style.width=dw+'px';cv.style.height=dh+'px';cv.width=Math.round(dw*dpr);cv.height=Math.round(dh*dpr);
   ctx.setTransform(dpr,0,0,dpr,0,0);ctx.drawImage(shot,0,0,dw,dh);
-  const x=rect.x0*dw,y=rect.y0*dh,w=(rect.x1-rect.x0)*dw,h=(rect.y1-rect.y0)*dh;
-  ctx.fillStyle='rgba(0,0,0,.62)';ctx.beginPath();ctx.rect(0,0,dw,dh);ctx.rect(x,y,w,h);ctx.fill('evenodd');
-  ctx.strokeStyle='#FFC300';ctx.lineWidth=2;ctx.strokeRect(x,y,w,h);
-  const pts=[[rect.x0,rect.y0],[rect.x1,rect.y0],[rect.x0,rect.y1],[rect.x1,rect.y1]];
-  handles.forEach((hd,i)=>{hd.style.left=(ox+pts[i][0]*dw)+'px';hd.style.top=(oy+pts[i][1]*dh)+'px';});
+  const pts=quad.map(([x,y])=>[x*dw,y*dh]);
+  ctx.fillStyle='rgba(0,0,0,.62)';ctx.beginPath();ctx.rect(0,0,dw,dh);pts.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.closePath();ctx.fill('evenodd');
+  ctx.beginPath();pts.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.closePath();ctx.strokeStyle='#FFC300';ctx.lineWidth=2;ctx.stroke();
+  handles.forEach((hd,i)=>{hd.style.left=(ox+pts[i][0])+'px';hd.style.top=(oy+pts[i][1])+'px';});
 }
 function makeHandles(){
   handles.forEach(h=>h.remove());handles=[];
-  ['x0y0','x1y0','x0y1','x1y1'].forEach(key=>{
+  quad.forEach((_,i)=>{
     const h=document.createElement('div');h.className='handle';h.setAttribute('aria-label','Ecke verschieben');stage.appendChild(h);handles.push(h);
     h.addEventListener('pointerdown',e=>{e.preventDefault();h.setPointerCapture(e.pointerId);
       const move=ev=>{const cr=cv.getBoundingClientRect();
-        const fx=Math.min(1,Math.max(0,(ev.clientX-cr.left)/cr.width)),fy=Math.min(1,Math.max(0,(ev.clientY-cr.top)/cr.height)),g=.04;
-        if(key.startsWith('x0'))rect.x0=Math.min(fx,rect.x1-g);else rect.x1=Math.max(fx,rect.x0+g);
-        if(key.endsWith('y0'))rect.y0=Math.min(fy,rect.y1-g);else rect.y1=Math.max(fy,rect.y0+g);drawReview();};
+        quad[i]=[Math.min(1,Math.max(0,(ev.clientX-cr.left)/cr.width)),Math.min(1,Math.max(0,(ev.clientY-cr.top)/cr.height))];drawReview();};
       const up=()=>{h.removeEventListener('pointermove',move);h.removeEventListener('pointerup',up);h.removeEventListener('pointercancel',up);};
       h.addEventListener('pointermove',move);h.addEventListener('pointerup',up);h.addEventListener('pointercancel',up);});
   });
 }
+// homography that maps the output rectangle (0..w, 0..h) onto the four corners in the photo
+function homography(w,h,q){
+  const src=[[0,0],[w,0],[w,h],[0,h]],A=[],B=[];
+  for(let i=0;i<4;i++){const [x,y]=src[i],[u,v]=q[i];
+    A.push([x,y,1,0,0,0,-u*x,-u*y]);B.push(u);A.push([0,0,0,x,y,1,-v*x,-v*y]);B.push(v);}
+  for(let c=0;c<8;c++){let p=c;for(let r=c+1;r<8;r++)if(Math.abs(A[r][c])>Math.abs(A[p][c]))p=r;
+    [A[c],A[p]]=[A[p],A[c]];[B[c],B[p]]=[B[p],B[c]];
+    for(let r=0;r<8;r++){if(r===c)continue;const f=A[r][c]/A[c][c];for(let k=c;k<8;k++)A[r][k]-=f*A[c][k];B[r]-=f*B[c];}}
+  return B.map((b,i)=>b/A[i][i]);
+}
+// cut the receipt out along its corners and pull it straight (perspective), long side at most 3000 px
 function cropShot(){
-  const W=shot.width,H=shot.height,sx=Math.round(rect.x0*W),sy=Math.round(rect.y0*H),sw=Math.max(8,Math.round((rect.x1-rect.x0)*W)),sh=Math.max(8,Math.round((rect.y1-rect.y0)*H));
-  const k=Math.min(1,3000/Math.max(sw,sh)),c=document.createElement('canvas');c.width=Math.round(sw*k);c.height=Math.round(sh*k);
-  c.getContext('2d').drawImage(shot,sx,sy,sw,sh,0,0,c.width,c.height);return c;
+  const W=shot.width,H=shot.height,q=quad.map(([x,y])=>[x*W,y*H]);
+  const d=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1]);
+  let ow=Math.max(d(q[0],q[1]),d(q[3],q[2])),oh=Math.max(d(q[0],q[3]),d(q[1],q[2]));
+  const k=Math.min(1,3000/Math.max(ow,oh));ow=Math.max(8,Math.round(ow*k));oh=Math.max(8,Math.round(oh*k));
+  const src=shot.getContext('2d',{willReadFrequently:true}).getImageData(0,0,W,H).data;
+  const c=document.createElement('canvas');c.width=ow;c.height=oh;const o=c.getContext('2d'),img=o.createImageData(ow,oh),out=img.data;
+  const [a,b,cc,dd,e,f,g,hh]=homography(ow,oh,q);
+  for(let y=0;y<oh;y++){const yc=y+.5;
+    for(let x=0;x<ow;x++){const xc=x+.5,z=g*xc+hh*yc+1,u=(a*xc+b*yc+cc)/z-.5,v=(dd*xc+e*yc+f)/z-.5;
+      const x0=Math.max(0,Math.min(W-2,Math.floor(u))),y0=Math.max(0,Math.min(H-2,Math.floor(v))),fx=Math.min(1,Math.max(0,u-x0)),fy=Math.min(1,Math.max(0,v-y0));
+      const i00=(y0*W+x0)*4,i10=i00+4,i01=i00+W*4,i11=i01+4,j=(y*ow+x)*4;
+      for(let ch=0;ch<3;ch++){const t=src[i00+ch]*(1-fx)+src[i10+ch]*fx,bt=src[i01+ch]*(1-fx)+src[i11+ch]*fx;out[j+ch]=t*(1-fy)+bt*fy;}
+      out[j+3]=255;}}
+  o.putImageData(img,0,0);return c;
 }
 $('again').addEventListener('click',backToCamera);
 $('more').addEventListener('click',()=>{pieces.push(cropShot());backToCamera();});
