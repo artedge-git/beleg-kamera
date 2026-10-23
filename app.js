@@ -2,7 +2,7 @@
 // pieces joined by feature matching, upload straight into the Dropbox _Eingang with an offline queue.
 (function(){
 'use strict';
-const VERSION='1.8';
+const VERSION='1.9';
 const CFG=Object.assign({dropboxAppKey:'',ziel:'/_artedge eU/bookdesk/_Eingang'},window.BELEG_CONFIG||{});
 const $=id=>document.getElementById(id);
 const pad=n=>String(n).padStart(2,'0');
@@ -64,17 +64,17 @@ function loop(){
     const n=w*h,lum=new Uint8Array(Math.ceil(n/4));let diff=0;
     for(let i=0,j=0;i<n;i+=4,j++){lum[j]=(d[i*4]*77+d[i*4+1]*150+d[i*4+2]*29)>>8;if(prevLum)diff+=Math.abs(lum[j]-prevLum[j]);}
     const motion=prevLum?diff/lum.length:99;prevLum=lum;
-    let r;try{r=BelegDetect.detectData(d,w,h);}catch(e){r={found:false};}
+    let r;try{r=withCorners(BelegDetect.detectData(d,w,h));}catch(e){r={found:false};}
     if(r.found&&(r.x1-r.x0)*(r.y1-r.y0)<.05)r.found=false;
     // Detection on a hand-held phone flickers from frame to frame: show and judge a smoothed frame,
     // and count the receipt as steady when most recent frames agree with it and the picture is calm.
     const raw=r.found?r:null;
     if(raw){
       // a different place only counts after 4 frames in a row; small changes (under ~1.5 %) are ignored
-      if(!smooth||iou(raw,smooth)<.5){jumps++;if(!smooth||jumps>=4){smooth=Object.assign({},raw,{q:raw.q.map(p=>p.slice())});jumps=0;}}
+      if(!smooth||iou(raw,smooth)<.5){jumps++;if(!smooth||jumps>=3){smooth=Object.assign({},raw,{q:raw.q.map(p=>p.slice())});jumps=0;}}
       else{jumps=0;const dev=Math.max(...raw.q.map((p,i)=>Math.max(Math.abs(p[0]-smooth.q[i][0]),Math.abs(p[1]-smooth.q[i][1]))));
-        if(dev>.015){['x0','y0','x1','y1'].forEach(k=>smooth[k]+=.2*(raw[k]-smooth[k]));
-          smooth.q.forEach((p,i)=>{p[0]+=.2*(raw.q[i][0]-p[0]);p[1]+=.2*(raw.q[i][1]-p[1]);});}}
+        if(dev>.01){['x0','y0','x1','y1'].forEach(k=>smooth[k]+=.3*(raw[k]-smooth[k]));
+          smooth.q.forEach((p,i)=>{p[0]+=.3*(raw.q[i][0]-p[0]);p[1]+=.3*(raw.q[i][1]-p[1]);});}}
     }
     frames.push({t:t0,r:raw,motion});if(frames.length>5)frames.shift();
     const found=frames.filter(f=>f.r).length;
@@ -129,19 +129,20 @@ $('torch').addEventListener('click',()=>{if(!track)return;torchOn=!torchOn;
   track.applyConstraints({advanced:[{torch:torchOn}]}).then(()=>{$('torch').classList.toggle('on',torchOn);$('torch').setAttribute('aria-pressed',String(torchOn));}).catch(()=>{torchOn=false;});});
 $('shutter').addEventListener('click',()=>{if(running&&video.videoWidth)capture(false);else $('pick').click();});
 
+function withCorners(r){if(r&&!r.q)r.q=[[r.x0,r.y0],[r.x1,r.y0],[r.x1,r.y1],[r.x0,r.y1]];return r;}
 function capture(isAuto){
   running=false;clearTimeout(loopT);
   const W=video.videoWidth,H=video.videoHeight,c=document.createElement('canvas');c.width=W;c.height=H;
   c.getContext('2d').drawImage(video,0,0,W,H);
   $('flash').classList.remove('on');void $('flash').offsetWidth;$('flash').classList.add('on');
-  let r;try{r=BelegDetect.detect(c,W,H,480);}catch(e){r=null;}
+  let r;try{r=withCorners(BelegDetect.detect(c,W,H,480));}catch(e){r=null;}
   if(!r||!r.found)r=live?Object.assign({},live):{q:[[0,0],[1,0],[1,1],[0,1]],found:false};
   openReview(c,r,isAuto);
 }
 $('pick').addEventListener('change',e=>{const f=e.target.files[0];e.target.value='';if(!f)return;
   const im=new Image(),u=URL.createObjectURL(f);
   im.onload=()=>{const c=document.createElement('canvas');c.width=im.naturalWidth;c.height=im.naturalHeight;c.getContext('2d').drawImage(im,0,0);URL.revokeObjectURL(u);
-    let r;try{r=BelegDetect.detect(c,c.width,c.height,480);}catch(err){r={x0:0,y0:0,x1:1,y1:1,found:false};}
+    let r;try{r=withCorners(BelegDetect.detect(c,c.width,c.height,480));}catch(err){r=withCorners({x0:0,y0:0,x1:1,y1:1,found:false});}
     running=false;clearTimeout(loopT);openReview(c,r,false);};
   im.onerror=()=>toast('Das Foto ließ sich nicht öffnen.');im.src=u;});
 
