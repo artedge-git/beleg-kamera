@@ -2,7 +2,7 @@
 // pieces joined by feature matching, upload straight into the Dropbox _Eingang with an offline queue.
 (function(){
 'use strict';
-const VERSION='1.3';
+const VERSION='1.4';
 const CFG=Object.assign({dropboxAppKey:'',ziel:'/_artedge eU/bookdesk/_Eingang'},window.BELEG_CONFIG||{});
 const $=id=>document.getElementById(id);
 const pad=n=>String(n).padStart(2,'0');
@@ -18,7 +18,7 @@ function screen(name){['cam','review','sheet'].forEach(s=>$(s).hidden=s!==name);
 // ---------------------------------------------------------------- camera
 const video=$('vf'),ov=$('ov'),octx=ov.getContext('2d');
 let stream=null,track=null,running=false,auto=store.get('auto',true);
-let live=null,smooth=null,jumps=0,frames=[],stableSince=0,needMotion=false,armAt=0,prevLum=null,loopT=0;
+let dbgOn=store.get('dbg',false),dbgTaps=0,live=null,smooth=null,jumps=0,frames=[],stableSince=0,needMotion=false,armAt=0,prevLum=null,loopT=0;
 let pieces=[];             // canvases of the pieces of the current receipt, already cropped
 let shot=null,rect=null;   // the captured frame under review and its crop (fractions)
 
@@ -73,17 +73,18 @@ function loop(){
       if(!smooth||iou(raw,smooth)<.5){jumps++;if(!smooth||jumps>=2){smooth=Object.assign({},raw);jumps=0;}}
       else{jumps=0;['x0','y0','x1','y1'].forEach(k=>smooth[k]+=.35*(raw[k]-smooth[k]));}
     }
-    frames.push({t:t0,r:raw,motion});if(frames.length>6)frames.shift();
+    frames.push({t:t0,r:raw,motion});if(frames.length>5)frames.shift();
     const found=frames.filter(f=>f.r).length;
     if(found===0)smooth=null;
     live=smooth&&raw?smooth:(smooth&&found>=3?smooth:null);
     if(needMotion&&motion>12)needMotion=false;
     const agree=smooth?frames.filter(f=>f.r&&iou(f.r,smooth)>.75).length:0;
-    const calm=frames.slice(-4).map(f=>f.motion).sort((a,b)=>a-b)[1]<14;
-    const steady=live&&frames.length>=4&&agree>=Math.min(4,frames.length-1)&&calm;
-    if(location.hash==='#debug')console.log('dbg',JSON.stringify({m:+motion.toFixed(1),raw:raw&&raw.mode,found,agree,calm}));
+    const mm=frames.slice(-4).map(f=>f.motion).sort((a,b)=>a-b),med=mm[Math.floor(mm.length/2)],calm=med<22;
+    const steady=!!live&&frames.length>=3&&agree>=3&&calm;
+    if(dbgOn){const dt=frames.length>1?(frames[frames.length-1].t-frames[0].t)/(frames.length-1):0;
+      $('dbg').textContent=(dt?Math.round(1000/dt):0)+' B/s · Bewegung '+med.toFixed(0)+(calm?' ruhig':' unruhig')+' · erkannt '+found+'/5 · passt '+agree+' · '+(raw?raw.mode:'-')+' · '+(auto?(needMotion?'wartet auf Bewegung':'scharf'):'Auto aus')+' · '+video.videoWidth+'×'+video.videoHeight;}
     if(steady){if(!stableSince)stableSince=t0;}else stableSince=0;
-    const held=stableSince?t0-stableSince:0,need=700;
+    const held=stableSince?t0-stableSince:0,need=600;
     const armed=auto&&!needMotion&&t0>=armAt;
     drawLive(armed?Math.min(1,held/need):0);
     hintLive(armed,held>0);
@@ -111,6 +112,8 @@ function hintLive(armed,holding){
   else msg=holding?'Ruhig halten …':'Zettel erkannt. Ruhig halten.';
   $('hint').innerHTML=pre+msg;
 }
+document.querySelector('.brand').addEventListener('click',()=>{if(++dbgTaps<3){setTimeout(()=>dbgTaps=0,1200);return;}dbgTaps=0;dbgOn=!dbgOn;store.set('dbg',dbgOn);$('dbg').hidden=!dbgOn;});
+$('dbg').hidden=!dbgOn;
 $('auto').addEventListener('click',()=>{auto=!auto;store.set('auto',auto);syncAuto();});
 function syncAuto(){$('auto').classList.toggle('on',auto);$('auto').setAttribute('aria-pressed',String(auto));$('shutter').classList.toggle('auto',auto);}
 syncAuto();
