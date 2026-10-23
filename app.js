@@ -2,7 +2,7 @@
 // pieces joined by feature matching, upload straight into the Dropbox _Eingang with an offline queue.
 (function(){
 'use strict';
-const VERSION='1.5';
+const VERSION='1.6';
 const CFG=Object.assign({dropboxAppKey:'',ziel:'/_artedge eU/bookdesk/_Eingang'},window.BELEG_CONFIG||{});
 const $=id=>document.getElementById(id);
 const pad=n=>String(n).padStart(2,'0');
@@ -85,7 +85,7 @@ function loop(){
     if(dbgOn){const dt=frames.length>1?(frames[frames.length-1].t-frames[0].t)/(frames.length-1):0;
       $('dbg').textContent=(dt?Math.round(1000/dt):0)+' B/s · Bewegung '+med.toFixed(0)+(calm?' ruhig':' unruhig')+' · erkannt '+found+'/5 · passt '+agree+' · '+(raw?raw.mode:'-')+' · '+(auto?(needMotion?'wartet auf Bewegung':'scharf'):'Auto aus')+' · '+video.videoWidth+'×'+video.videoHeight;}
     if(steady){if(!stableSince)stableSince=t0;}else stableSince=0;
-    const held=stableSince?t0-stableSince:0,need=600;
+    const held=stableSince?t0-stableSince:0,need=1000;
     const armed=auto&&!needMotion&&t0>=armAt;
     drawLive(armed?Math.min(1,held/need):0);
     hintLive(armed,held>0);

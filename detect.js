@@ -46,8 +46,8 @@
     while(bb[3]-bb[1]>10&&fr(bb[1])<.45)bb[1]++;while(bb[3]-bb[1]>10&&fr(bb[3])<.45)bb[3]--;
     const bw=bb[2]-bb[0]+1,bh=bb[3]-bb[1]+1,area=bw*bh/n;if(area<.03)return null;
     let k=0;for(let y=bb[1];y<=bb[3];y++)for(let x=bb[0];x<=bb[2];x++)if(L(y*w+x))k++;
-    const q=corners(L,c.x0,c.y0,c.x1,c.y1,w),qa=q?quadArea(q):0;
-    const fill=Math.max(k/(bw*bh),qa?Math.min(1,c.cnt/qa):0),touch=(bb[0]<=1)+(bb[1]<=1)+(bb[2]>=w-2)+(bb[3]>=h-2);
+    const q=corners(L,c.x0,c.y0,c.x1,c.y1,w);
+    const fill=k/(bw*bh),touch=(bb[0]<=1)+(bb[1]<=1)+(bb[2]>=w-2)+(bb[3]>=h-2);
     return {bb,q,area,fill,touch,score:fill*(1-.25*touch)*(area>.85?.3:1)};
   }
   function textBox(lum,w,h){
@@ -83,7 +83,7 @@
     const y0=ext(r0,-1),y1=ext(r0,1),bw=(x1-x0+1)/w,bh=(y1-y0+1)/h;
     if(!(bw>=.06&&bw<=.75&&bh>=.5))return null;
     let k=0;for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++)k+=m[y*w+x];
-    return {bb:[x0,y0,x1,y1],q:corners(i=>m[i],x0,y0,x1,y1,w),fill:k/((x1-x0+1)*(y1-y0+1))};
+    return {bb:[x0,y0,x1,y1],fill:k/((x1-x0+1)*(y1-y0+1))};
   }
   // d: RGBA pixels of a w×h picture (already small, about 320–480 px on the long side).
   // Returns the receipt as fractions of the picture {x0,y0,x1,y1,found}.
@@ -94,11 +94,12 @@
     const ts=new Set([Math.max(110,otsu(lum))]);[60,70,80,88].forEach(p=>ts.add(Math.max(110,pct(p))));
     let best=null;for(const t of ts){const cd=paperCand(lum,sat,t,w,h);if(cd&&(!best||cd.score>best.score))best=cd;}
     let bb,m,mode,q=null;
-    if(best&&best.fill>=.9&&best.touch===0&&best.area<=.5){bb=best.bb;q=best.q;m=.01;mode='papier';}
+    if(best&&best.fill>=.9&&best.touch===0&&best.area<=.5){bb=best.bb;m=.01;mode='papier';
+      if(best.q&&quadArea(best.q)>=.85*(bb[2]-bb[0]+1)*(bb[3]-bb[1]+1))q=best.q;}
     else{bb=textBox(lum,w,h);m=.04;mode='text';
       const ta=bb?(bb[2]-bb[0]+1)*(bb[3]-bb[1]+1)/n:1;
       if(ta>.55){let pb=null;for(const t of ts){const p=projBox(lum,sat,t,w,h);if(p&&(!pb||p.fill>pb.fill))pb=p;}
-        if(pb&&pb.fill>=.75){bb=pb.bb;q=pb.q;m=.015;mode='streifen';}}
+        if(pb&&pb.fill>=.75){bb=pb.bb;m=.015;mode='streifen';}}
       if(!bb)return {x0:0,y0:0,x1:1,y1:1,found:false,mode:'keiner'};}
     const r={x0:Math.max(0,bb[0]/w-m),y0:Math.max(0,bb[1]/h-m),x1:Math.min(1,(bb[2]+1)/w+m),y1:Math.min(1,(bb[3]+1)/h+m),found:true,mode};
     if((r.x1-r.x0)*(r.y1-r.y0)>.92||(r.x1-r.x0)*(r.y1-r.y0)<.02)r.found=false;
