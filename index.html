@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Beleg-Kamera</title>
+<meta name="description" content="book|desk · artedge: Kassenzettel fotografieren, zuschneiden und direkt in den Dropbox-Eingang laden.">
+<meta name="theme-color" content="#141416">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Beleg-Kamera">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+/* The camera is always dark, like the system camera: black #141416, accent amber. */
+:root{
+  --bg:#141416; --surface:#1d1d20; --surface2:#26262a; --fg:#f2f1ee; --muted:#9a9993; --line:#2e2e32;
+  --accent:#FFC300; --accent-fg:#141416; --ok:#5fbf86; --warn:#f08a4b;
+  --f-body:"Geist",ui-sans-serif,system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+  --f-mono:"Geist Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  --st:env(safe-area-inset-top,0px); --sb:env(safe-area-inset-bottom,0px);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;line-height:1.4;
+  -webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;overscroll-behavior:none}
+body{position:fixed;inset:0;overflow:hidden}
+button{font:inherit;color:inherit}
+[hidden]{display:none!important}
+.screen{position:absolute;inset:0;display:flex;flex-direction:column}
+
+/* camera */
+#vf{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
+#ov{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+#flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}
+#flash.on{animation:fl .25s ease-out}
+@keyframes fl{0%{opacity:.85}100%{opacity:0}}
+.top{position:absolute;left:0;right:0;top:0;padding:calc(var(--st) + 10px) 14px 10px;display:flex;align-items:center;gap:8px;
+  background:linear-gradient(rgba(20,20,22,.75),rgba(20,20,22,0))}
+.brand{font-family:var(--f-mono);font-size:12px;letter-spacing:.04em;color:var(--muted);margin-right:auto;line-height:1.2}
+.brand b{color:var(--fg);font-weight:500;display:block;font-family:var(--f-body);font-size:16px;letter-spacing:0}
+.chip{appearance:none;border:1px solid rgba(242,241,238,.25);background:rgba(20,20,22,.55);border-radius:999px;min-height:36px;padding:0 13px;
+  font-size:14px;font-weight:500;display:inline-flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap}
+.chip.on{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.chip.warn{border-color:var(--warn);color:var(--warn)}
+.bottom{position:absolute;left:0;right:0;bottom:0;padding:14px 18px calc(var(--sb) + 18px);display:flex;flex-direction:column;gap:14px;align-items:center;
+  background:linear-gradient(rgba(20,20,22,0),rgba(20,20,22,.8) 35%)}
+.hint{min-height:42px;max-width:420px;text-align:center;font-size:15px;font-weight:500;text-wrap:balance;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+.hint .piece{color:var(--accent)}
+.controls{width:100%;max-width:420px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center}
+.side{appearance:none;border:0;background:none;cursor:pointer;font-size:14px;font-weight:500;min-height:48px;padding:0 6px;display:flex;align-items:center;gap:8px}
+.side.l{justify-self:start}.side.r{justify-self:end}
+.shutter{appearance:none;width:78px;height:78px;border-radius:50%;border:4px solid var(--fg);background:transparent;padding:5px;cursor:pointer;position:relative}
+.shutter::after{content:"";display:block;width:100%;height:100%;border-radius:50%;background:var(--fg);transition:transform .08s}
+.shutter:active::after{transform:scale(.9)}
+.shutter.auto{border-color:var(--accent)}
+.shutter svg{position:absolute;inset:-4px;width:78px;height:78px;transform:rotate(-90deg)}
+.shutter circle{fill:none;stroke:var(--accent);stroke-width:4;stroke-linecap:round}
+.thumbs{display:flex;gap:4px;align-items:center}
+.thumbs img{width:30px;height:40px;object-fit:cover;border-radius:4px;border:1px solid var(--accent)}
+.camerr{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;text-align:center}
+.camerr p{max-width:340px;color:var(--muted);margin:0}
+
+/* buttons */
+.btn{appearance:none;border:0;border-radius:14px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;
+  min-height:52px;padding:0 18px;text-decoration:none;font-size:16px}
+.btn:focus-visible,.chip:focus-visible,.side:focus-visible,.shutter:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.btn-primary{background:var(--accent);color:var(--accent-fg);font-size:18px;min-height:60px}
+.btn-ghost{background:var(--surface);color:var(--fg);border:1px solid var(--line)}
+.btn[disabled]{opacity:.5}
+@media (prefers-reduced-motion: no-preference){.btn{transition:transform .08s}.btn:active{transform:scale(.98)}}
+
+/* review */
+#review{background:var(--bg)}
+.stage{position:relative;flex:1;min-height:0;margin:calc(var(--st) + 10px) 12px 0;touch-action:none}
+.stage canvas{position:absolute;display:block}
+.handle{position:absolute;width:48px;height:48px;margin:-24px 0 0 -24px;border-radius:50%;touch-action:none}
+.handle::after{content:"";position:absolute;inset:14px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px #141416}
+.panel{padding:12px 16px calc(var(--sb) + 14px);display:flex;flex-direction:column;gap:10px;max-width:520px;width:100%;margin:0 auto}
+.panel .note{font-size:14px;color:var(--muted);text-align:center;margin:0;text-wrap:balance}
+.panel .note b{color:var(--accent);font-weight:500}
+.row{display:flex;gap:10px}.row>.btn{flex:1}
+
+/* sheet: history + setup */
+.sheet{background:var(--bg);overflow:auto;padding:calc(var(--st) + 16px) 16px calc(var(--sb) + 24px)}
+.sheet .in{max-width:520px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+.sheet header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.sheet h1{margin:0;font-size:24px;font-weight:700}
+.sheet h2{font-size:13px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
+.sheet p{margin:0;color:var(--muted);font-size:15px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:12px}
+.card input{font:inherit;font-family:var(--f-mono);font-size:15px;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px;
+  min-height:48px;padding:0 12px;width:100%;-webkit-user-select:text;user-select:text}
+.ok{color:var(--ok)!important}.err{color:var(--warn)!important}
+.list{display:flex;flex-direction:column;gap:8px;margin:0;padding:0;list-style:none}
+.item{display:grid;grid-template-columns:40px 1fr auto;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 12px 8px 8px}
+.item img{width:40px;height:54px;object-fit:cover;border-radius:6px;background:var(--line)}
+.item .name{font-family:var(--f-mono);font-size:13px;min-width:0;overflow-wrap:anywhere}
+.item .meta{font-size:12px;color:var(--muted)}
+.pill{font-size:12px;font-weight:500;padding:3px 9px;border-radius:999px;white-space:nowrap;border:1px solid currentColor}
+.pill.wait{color:var(--accent)}.pill.done{color:var(--ok)}.pill.fail{color:var(--warn)}
+.empty{color:var(--muted);font-size:14px;padding:14px;border:1px dashed var(--line);border-radius:12px}
+
+.toast{position:absolute;left:50%;top:calc(var(--st) + 64px);transform:translateX(-50%);max-width:calc(100% - 32px);background:var(--surface2);
+  border:1px solid var(--line);border-radius:12px;padding:10px 14px;font-size:14px;font-weight:500;z-index:5;text-align:center;box-shadow:0 6px 24px rgba(0,0,0,.4)}
+.busy{position:absolute;inset:0;background:rgba(20,20,22,.82);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:6;font-weight:500}
+.spin{width:36px;height:36px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--accent);animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+input[type=file]{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+</style>
+</head>
+<body>
+
+<!-- camera -->
+<div class="screen" id="cam">
+  <video id="vf" playsinline muted autoplay></video>
+  <canvas id="ov"></canvas>
+  <div id="flash"></div>
+  <div class="camerr" id="camerr" hidden>
+    <p id="camerrText">Die Kamera ist noch nicht an.</p>
+    <button class="btn btn-primary" id="camStart" type="button">Kamera starten</button>
+    <label class="btn btn-ghost" for="pick">Foto aus der Mediathek</label>
+  </div>
+  <div class="top">
+    <div class="brand"><b>Beleg-Kamera</b>book|desk · artedge</div>
+    <button class="chip" id="torch" type="button" hidden aria-pressed="false">Licht</button>
+    <button class="chip on" id="auto" type="button" aria-pressed="true">Auto</button>
+    <button class="chip" id="hist" type="button">Verlauf</button>
+  </div>
+  <div class="bottom">
+    <div class="hint" id="hint" aria-live="polite">Kamera wird gestartet …</div>
+    <div class="controls">
+      <label class="side l" for="pick" id="pickBtn">Mediathek</label>
+      <button class="shutter auto" id="shutter" type="button" aria-label="Auslösen">
+        <svg viewBox="0 0 78 78" aria-hidden="true"><circle id="ring" cx="39" cy="39" r="37" stroke-dasharray="232.5" stroke-dashoffset="232.5"/></svg>
+      </button>
+      <div class="side r"><div class="thumbs" id="thumbs"></div></div>
+    </div>
+  </div>
+  <input type="file" id="pick" accept="image/*">
+</div>
+
+<!-- review one piece -->
+<div class="screen" id="review" hidden>
+  <div class="stage" id="stage"><canvas id="cv"></canvas></div>
+  <div class="panel">
+    <p class="note" id="rnote"></p>
+    <button class="btn btn-primary" id="send" type="button">Senden</button>
+    <div class="row">
+      <button class="btn btn-ghost" id="more" type="button">+ Nächstes Stück</button>
+      <button class="btn btn-ghost" id="again" type="button">Nochmal</button>
+    </div>
+  </div>
+</div>
+
+<!-- history and Dropbox connection -->
+<div class="screen sheet" id="sheet" hidden>
+  <div class="in">
+    <header><h1>Verlauf</h1><button class="btn btn-ghost" id="close" type="button">Zur Kamera</button></header>
+    <div class="card" id="conn">
+      <h2 style="margin:0">Dropbox</h2>
+      <p id="connText">…</p>
+      <button class="btn btn-primary" id="connect" type="button" hidden>Mit Dropbox verbinden</button>
+      <div id="codeBox" hidden style="display:flex;flex-direction:column;gap:10px">
+        <p>Dropbox zeigt nach dem Erlauben einen Code an. Kopiere ihn und füge ihn hier ein.</p>
+        <input id="code" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Code aus Dropbox">
+        <button class="btn btn-primary" id="codeOk" type="button">Verbinden</button>
+      </div>
+      <button class="btn btn-ghost" id="disconnect" type="button" hidden>Dropbox trennen</button>
+    </div>
+    <section>
+      <h2>Zuletzt aufgenommen</h2>
+      <ul class="list" id="list"></ul>
+      <div class="empty" id="empty">Noch nichts aufgenommen. „Wartet“ heißt: noch auf dem Handy, „Im Eingang“ heißt: in der Dropbox.</div>
+    </section>
+    <p style="font-size:13px">Ziel: <span style="font-family:var(--f-mono)" id="ziel"></span> · Version <span id="ver"></span></p>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden role="status"></div>
+<div class="busy" id="busy" hidden><div class="spin"></div><div id="busyText">Einen Moment …</div></div>
+
+<script src="config.js"></script>
+<script src="detect.js"></script>
+<script src="stitch.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
