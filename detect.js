@@ -101,7 +101,10 @@
     const mu=ink/rows.length,lines=mu?Math.sqrt(rows.reduce((a,k)=>a+(k-mu)*(k-mu),0)/rows.length)/mu:99;
     const pct=p=>{let k=0;for(let i=0;i<256;i++){k+=hist[i];if(k>=cnt*p)return i;}return 255;};
     const inkShare=ink/cnt,colour=col/cnt,l10=pct(.1),l50=Math.max(1,pct(.5)),spread=(l50-l10)/l50;
-    const ok=inkShare>=.02&&colour<=.3&&(mode==='papier'?lines<=5:lines<=3&&spread<=.4);
+    // A clear sheet (papier) only needs a little print, a blurred or coloured form (SEPA band) is fine.
+    // The strict checks are for the text fallback, which is where floors and tables ended up.
+    const ok=mode==='papier'?inkShare>=.01&&lines<=5:mode==='streifen'?inkShare>=.015&&lines<=3&&spread<=.4:
+      inkShare>=.02&&colour<=.3&&lines<=3&&spread<=.4;
     return {ok,dbg:'ink '+inkShare.toFixed(3)+' spread '+spread.toFixed(2)+' lines '+lines.toFixed(2)+' colour '+colour.toFixed(2)};
   }
   // d: RGBA pixels of a w×h picture (already small, about 320–480 px on the long side).
