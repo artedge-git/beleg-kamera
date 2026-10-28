@@ -38,7 +38,7 @@
     const bw=bb[2]-bb[0]+1,bh=bb[3]-bb[1]+1,area=bw*bh/n;if(area<.03)return null;
     let k=0;for(let y=bb[1];y<=bb[3];y++)for(let x=bb[0];x<=bb[2];x++)if(L(y*w+x))k++;
     const fill=k/(bw*bh),touch=(bb[0]<=1)+(bb[1]<=1)+(bb[2]>=w-2)+(bb[3]>=h-2);
-    return {bb,area,fill,touch,score:fill*(1-.25*touch)*(area>.85?.3:1)};
+    return {bb,t,area,fill,touch,score:fill*(1-.25*touch)*(area>.85?.3:1)};
   }
   function textBox(lum,w,h){
     // integral image for a 9x9 local mean; ink = clearly darker than its surroundings
@@ -75,6 +75,16 @@
     let k=0;for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++)k+=m[y*w+x];
     return {bb:[x0,y0,x1,y1],fill:k/((x1-x0+1)*(y1-y0+1))};
   }
+  // A clear paper region can end at a coloured band (e.g. the orange SEPA form on a Wien Energie
+  // letter, Chris 2026-10-28): follow the sheet up and down as long as the rows in its middle stay
+  // bright, short dark gaps (print lines) allowed.
+  function extendV(lum,bb,t,w,h){
+    const xa=bb[0]+Math.round(.1*(bb[2]-bb[0])),xb=bb[2]-Math.round(.1*(bb[2]-bb[0])),lt=Math.max(90,.75*t);
+    const fr=y=>{let k=0;for(let x=xa;x<=xb;x++)if(lum[y*w+x]>lt)k++;return k/(xb-xa+1);};
+    const gap=Math.max(2,Math.round(.04*h)),r=bb.slice();
+    const ext=(y,step)=>{let g=0,last=y;while(y+step>=0&&y+step<h){y+=step;if(fr(y)>=.7){last=y;g=0;}else if(++g>gap)break;}return last;};
+    r[3]=ext(bb[3],1);r[1]=ext(bb[1],-1);return r;
+  }
   // Plausibility check: is there really a printed receipt in the box? Rejects bare floors, tables
   // and walls (Chris 2026-10-28: a light tiled floor was taken for a receipt). Only switches the
   // result to "not found", the box itself stays exactly as detected.
@@ -103,7 +113,7 @@
     const ts=new Set([Math.max(110,otsu(lum))]);[60,70,80,88].forEach(p=>ts.add(Math.max(110,pct(p))));
     let best=null;for(const t of ts){const cd=paperCand(lum,sat,t,w,h);if(cd&&(!best||cd.score>best.score))best=cd;}
     let bb,m,mode;
-    if(best&&best.fill>=.9&&best.touch===0&&best.area<=.5){bb=best.bb;m=.01;mode='papier';}
+    if(best&&best.fill>=.9&&best.touch===0&&best.area<=.5){bb=extendV(lum,best.bb,best.t,w,h);m=.01;mode='papier';}
     else{bb=textBox(lum,w,h);m=.04;mode='text';
       const ta=bb?(bb[2]-bb[0]+1)*(bb[3]-bb[1]+1)/n:1;
       if(ta>.55){let pb=null;for(const t of ts){const p=projBox(lum,sat,t,w,h);if(p&&(!pb||p.fill>pb.fill))pb=p;}
