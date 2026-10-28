@@ -75,6 +75,25 @@
     let k=0;for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++)k+=m[y*w+x];
     return {bb:[x0,y0,x1,y1],fill:k/((x1-x0+1)*(y1-y0+1))};
   }
+  // Plausibility check: is there really a printed receipt in the box? Rejects bare floors, tables
+  // and walls (Chris 2026-10-28: a light tiled floor was taken for a receipt). Only switches the
+  // result to "not found", the box itself stays exactly as detected.
+  // ink = share of pixels clearly darker than their 9x9 surroundings (print), spread = how much of
+  // the box is dark ground rather than paper (10th vs 50th brightness percentile), lines = how unevenly
+  // the ink is spread over the rows: print fills many rows, a floor has a few long joints or edges,
+  // colour = share of clearly coloured pixels (wood, parquet), a receipt is grey to white.
+  function plausible(lum,sat,bb,w,h,mode){
+    const I=new Float64Array((w+1)*(h+1));
+    for(let y=0;y<h;y++){let r=0;for(let x=0;x<w;x++){r+=lum[y*w+x];I[(y+1)*(w+1)+x+1]=I[y*(w+1)+x+1]+r;}}
+    const R=4,hist=new Uint32Array(256),rows=[];let cnt=0,ink=0,col=0;
+    for(let y=bb[1];y<=bb[3];y++){const k0=ink;for(let x=bb[0];x<=bb[2];x++){const a=Math.max(0,x-R),b=Math.max(0,y-R),c=Math.min(w,x+R+1),d=Math.min(h,y+R+1);
+      const mean=(I[d*(w+1)+c]-I[b*(w+1)+c]-I[d*(w+1)+a]+I[b*(w+1)+a])/((c-a)*(d-b)),v=lum[y*w+x];cnt++;hist[v]++;if(sat[y*w+x]>40)col++;if(mean-v>Math.max(6,.12*mean))ink++;}rows.push(ink-k0);}
+    const mu=ink/rows.length,lines=mu?Math.sqrt(rows.reduce((a,k)=>a+(k-mu)*(k-mu),0)/rows.length)/mu:99;
+    const pct=p=>{let k=0;for(let i=0;i<256;i++){k+=hist[i];if(k>=cnt*p)return i;}return 255;};
+    const inkShare=ink/cnt,colour=col/cnt,l10=pct(.1),l50=Math.max(1,pct(.5)),spread=(l50-l10)/l50;
+    const ok=inkShare>=.02&&colour<=.3&&(mode==='papier'?lines<=5:lines<=3&&spread<=.4);
+    return {ok,dbg:'ink '+inkShare.toFixed(3)+' spread '+spread.toFixed(2)+' lines '+lines.toFixed(2)+' colour '+colour.toFixed(2)};
+  }
   // d: RGBA pixels of a w×h picture (already small, about 320–480 px on the long side).
   // Returns the receipt as fractions of the picture {x0,y0,x1,y1,found}.
   function detectData(d,w,h){
@@ -90,8 +109,9 @@
       if(ta>.55){let pb=null;for(const t of ts){const p=projBox(lum,sat,t,w,h);if(p&&(!pb||p.fill>pb.fill))pb=p;}
         if(pb&&pb.fill>=.75){bb=pb.bb;m=.015;mode='streifen';}}
       if(!bb)return {x0:0,y0:0,x1:1,y1:1,found:false,mode:'keiner'};}
-    const r={x0:Math.max(0,bb[0]/w-m),y0:Math.max(0,bb[1]/h-m),x1:Math.min(1,(bb[2]+1)/w+m),y1:Math.min(1,(bb[3]+1)/h+m),found:true,mode};
-    if((r.x1-r.x0)*(r.y1-r.y0)>.92||(r.x1-r.x0)*(r.y1-r.y0)<.02)r.found=false;
+    const pl=plausible(lum,sat,bb,w,h,mode);
+    const r={dbg:pl.dbg,x0:Math.max(0,bb[0]/w-m),y0:Math.max(0,bb[1]/h-m),x1:Math.min(1,(bb[2]+1)/w+m),y1:Math.min(1,(bb[3]+1)/h+m),found:true,mode};
+    if((r.x1-r.x0)*(r.y1-r.y0)>.92||(r.x1-r.x0)*(r.y1-r.y0)<.02||!pl.ok)r.found=false;
     return r;
   }
   // src: image, video or canvas; W,H its pixel size
