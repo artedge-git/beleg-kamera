@@ -64,7 +64,7 @@ function loop(){
     const n=w*h,lum=new Uint8Array(Math.ceil(n/4));let diff=0;
     for(let i=0,j=0;i<n;i+=4,j++){lum[j]=(d[i*4]*77+d[i*4+1]*150+d[i*4+2]*29)>>8;if(prevLum)diff+=Math.abs(lum[j]-prevLum[j]);}
     const motion=prevLum?diff/lum.length:99;prevLum=lum;
-    let r;try{r=withCorners(BelegDetect.detectData(d,w,h));}catch(e){r={found:false};}
+    let r;if(!auto)r={found:false};else try{r=withCorners(BelegDetect.detectData(d,w,h));}catch(e){r={found:false};}
     if(r.found&&(r.x1-r.x0)*(r.y1-r.y0)<.05)r.found=false;
     // Detection on a hand-held phone flickers from frame to frame: show and judge a smoothed frame,
     // and count the receipt as steady when most recent frames agree with it and the picture is calm.
@@ -113,15 +113,17 @@ function drawLive(p){
 function hintLive(armed,holding){
   const k=pieces.length,pre=k?'<span class="piece">Stück '+(k+1)+':</span> ':'';
   let msg;
-  if(!live)msg=k?'Nächstes Stück so ins Bild, dass es etwas mit dem vorigen überlappt.':'Zettel ins Bild halten.';
-  else if(!auto)msg='Zettel erkannt. Zum Aufnehmen auslösen.';
+  if(!auto)msg='Auto aus: normales Foto ohne Zuschnitt. Zum Aufnehmen auslösen.';
+  else if(!live)msg=k?'Nächstes Stück so ins Bild, dass es etwas mit dem vorigen überlappt.':'Zettel ins Bild halten.';
+  
   else if(needMotion)msg='Für das nächste Foto die Kamera kurz bewegen, oder auslösen.';
   else msg=holding?'Ruhig halten …':'Zettel erkannt. Ruhig halten.';
   $('hint').innerHTML=pre+msg;
 }
 document.querySelector('.brand').addEventListener('click',()=>{if(++dbgTaps<3){setTimeout(()=>dbgTaps=0,1200);return;}dbgTaps=0;dbgOn=!dbgOn;store.set('dbg',dbgOn);$('dbg').hidden=!dbgOn;});
 $('dbg').hidden=!dbgOn;
-$('auto').addEventListener('click',()=>{auto=!auto;store.set('auto',auto);syncAuto();});
+$('auto').addEventListener('click',()=>{auto=!auto;store.set('auto',auto);syncAuto();
+  live=null;smooth=null;frames=[];stableSince=0;drawLive(0);toast(auto?'Auto an: Zettel wird erkannt und selbst ausgelöst.':'Auto aus: keine Erkennung, das ganze Foto wird gesendet.');});
 function syncAuto(){$('auto').classList.toggle('on',auto);$('auto').setAttribute('aria-pressed',String(auto));$('shutter').classList.toggle('auto',auto);}
 syncAuto();
 let torchOn=false;
@@ -139,6 +141,7 @@ function capture(isAuto){
   const W=video.videoWidth,H=video.videoHeight,c=document.createElement('canvas');c.width=W;c.height=H;
   c.getContext('2d').drawImage(video,0,0,W,H);
   $('flash').classList.remove('on');void $('flash').offsetWidth;$('flash').classList.add('on');
+  if(!auto){openReview(c,{q:[[0,0],[1,0],[1,1],[0,1]],found:false,full:true},false);return;}
   let r;try{r=withCorners(BelegDetect.detect(c,W,H,480));}catch(e){r=null;}
   if(!r||!r.found)r=live?Object.assign({},live):{q:[[0,0],[1,0],[1,1],[0,1]],found:false};
   openReview(c,padded(r),isAuto);
@@ -146,7 +149,7 @@ function capture(isAuto){
 $('pick').addEventListener('change',e=>{const f=e.target.files[0];e.target.value='';if(!f)return;
   const im=new Image(),u=URL.createObjectURL(f);
   im.onload=()=>{const c=document.createElement('canvas');c.width=im.naturalWidth;c.height=im.naturalHeight;c.getContext('2d').drawImage(im,0,0);URL.revokeObjectURL(u);
-    let r;try{r=withCorners(BelegDetect.detect(c,c.width,c.height,480));}catch(err){r=withCorners({x0:0,y0:0,x1:1,y1:1,found:false});}
+    let r;if(!auto)r={q:[[0,0],[1,0],[1,1],[0,1]],found:false,full:true};else try{r=withCorners(BelegDetect.detect(c,c.width,c.height,480));}catch(err){r=withCorners({x0:0,y0:0,x1:1,y1:1,found:false});}
     running=false;clearTimeout(loopT);openReview(c,padded(r),false);};
   im.onerror=()=>toast('Das Foto ließ sich nicht öffnen.');im.src=u;});
 
@@ -166,7 +169,7 @@ const cv=$('cv'),ctx=cv.getContext('2d'),stage=$('stage');let handles=[],geo=nul
 function openReview(c,r,isAuto){
   shot=c;quad=(r.q||[[0,0],[1,0],[1,1],[0,1]]).map(p=>p.slice());screen('review');
   const k=pieces.length;
-  $('rnote').innerHTML=(k?'<b>Stück '+(k+1)+'</b> · ':'')+(r.found?'Ecken passen? Sonst die gelben Punkte ziehen. Der Zettel wird gerade gezogen.':'Kein Zettel erkannt. Zieh die gelben Punkte an die vier Ecken.');
+  $('rnote').innerHTML=(k?'<b>Stück '+(k+1)+'</b> · ':'')+(r.full?'Auto aus: das ganze Foto wird gesendet. Zuschneiden geht trotzdem mit den gelben Punkten.':r.found?'Ecken passen? Sonst die gelben Punkte ziehen. Der Zettel wird gerade gezogen.':'Kein Zettel erkannt. Zieh die gelben Punkte an die vier Ecken.');
   $('send').textContent=k?'Alle '+(k+1)+' Stücke senden':'Senden';
   makeHandles();requestAnimationFrame(drawReview);
 }
