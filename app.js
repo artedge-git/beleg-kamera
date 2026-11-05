@@ -2,7 +2,7 @@
 // pieces joined by feature matching, upload straight into the Dropbox _Eingang with an offline queue.
 (function(){
 'use strict';
-const VERSION='1.14';
+const VERSION='1.15';
 const CFG=Object.assign({dropboxAppKey:'',ziel:'/_artedge eU/bookdesk/_Eingang'},window.BELEG_CONFIG||{});
 const $=id=>document.getElementById(id);
 const pad=n=>String(n).padStart(2,'0');
@@ -220,9 +220,12 @@ function cropShot(){
   o.putImageData(img,0,0);return c;
 }
 $('again').addEventListener('click',backToCamera);
+// Info für die Buchhaltung: optional, bleibt über alle Stücke stehen und wird nach dem Senden geleert.
+$('info').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('info').blur();}});
 $('more').addEventListener('click',()=>{pieces.push(cropShot());backToCamera();});
 $('send').addEventListener('click',async()=>{
   const all=pieces.concat([cropShot()]);pieces=[];
+  const info=$('info').value.replace(/\s+/g,' ').trim().slice(0,500);$('info').value='';$('info').blur();
   let out=all[0],note='';
   if(all.length>1){
     busy('Stücke werden zusammengefügt …');
@@ -235,7 +238,7 @@ $('send').addEventListener('click',async()=>{
   if(!blob){toast('Das Bild ließ sich nicht speichern. Bitte noch einmal.');backToCamera();return;}
   const name='Beleg_'+stamp(new Date())+'.jpg';
   const th=document.createElement('canvas');th.width=80;th.height=Math.round(80*out.height/out.width);th.getContext('2d').drawImage(out,0,0,th.width,th.height);
-  const item={name,blob,created:Date.now(),w:out.width,h:out.height,n:all.length,kb:Math.round(blob.size/1024),thumb:th.toDataURL('image/jpeg',.6)};
+  const item={name,blob,created:Date.now(),w:out.width,h:out.height,n:all.length,kb:Math.round(blob.size/1024),thumb:th.toDataURL('image/jpeg',.6),info};
   await Queue.add(item);addHistory(item,'wait');
   toast('Aufgenommen: '+(all.length>1?all.length+' Stücke, ':'')+item.kb+' KB'+note+'. Wird hochgeladen …');
   backToCamera();Sync.run();
@@ -269,7 +272,7 @@ const Queue=(()=>{
 
 // ---------------------------------------------------------------- history (this phone only)
 function addHistory(item,status){const h=store.get('verlauf',[]).filter(x=>x.name!==item.name);
-  h.unshift({name:item.name,kb:item.kb,n:item.n,w:item.w,h:item.h,created:item.created,thumb:item.thumb,status});store.set('verlauf',h.slice(0,25));renderHistory();}
+  h.unshift({name:item.name,kb:item.kb,n:item.n,w:item.w,h:item.h,created:item.created,thumb:item.thumb,info:item.info||'',status});store.set('verlauf',h.slice(0,25));renderHistory();}
 function setHistory(name,status,extra){const h=store.get('verlauf',[]);const x=h.find(v=>v.name===name);if(x){x.status=status;Object.assign(x,extra||{});store.set('verlauf',h);}renderHistory();}
 function renderHistory(){
   const h=store.get('verlauf',[]),ul=$('list');ul.textContent='';$('empty').hidden=h.length>0;
@@ -280,7 +283,9 @@ function renderHistory(){
     const mid=document.createElement('div');mid.style.minWidth='0';
     const nm=document.createElement('div');nm.className='name';nm.textContent=v.savedAs||v.name;
     const mt=document.createElement('div');mt.className='meta';mt.textContent=v.kb+' KB · '+v.w+'×'+v.h+(v.n>1?' · '+v.n+' Stücke':'');
-    mid.append(nm,mt);const p=document.createElement('span');
+    mid.append(nm,mt);
+    if(v.info){const inf=document.createElement('div');inf.className='meta';inf.style.color='var(--fg)';inf.textContent='Info: '+v.info;mid.appendChild(inf);}
+    const p=document.createElement('span');
     p.className='pill '+(v.status==='done'?'done':v.status==='fail'?'fail':'wait');p.textContent=v.status==='done'?'Im Eingang':v.status==='fail'?'Fehler':'Wartet';
     li.append(im,mid,p);ul.appendChild(li);});
 }
@@ -341,9 +346,16 @@ const Sync=(()=>{
       if(!items.length)return;
       if(!Dropbox.connected()){renderConn();return;}
       for(const it of items){
-        try{const j=await Dropbox.upload(it.name,it.blob);await Queue.del(it.name);left--;
-          setHistory(it.name,'done',{savedAs:j&&j.name&&j.name!==it.name?j.name:undefined});
-          toast('Im Eingang: '+((j&&j.name)||it.name));}
+        try{
+          // the photo first; then the note as a text file with the same name as the photo actually got
+          // (Dropbox may rename on a clash), e.g. Beleg_2026-11-05_17-20-03.jpg + Beleg_2026-11-05_17-20-03.txt
+          let saved=it.savedAs;
+          if(!it.imgDone){const j=await Dropbox.upload(it.name,it.blob);saved=(j&&j.name)||it.name;
+            if(it.info){it.imgDone=true;it.savedAs=saved;await Queue.add(it);}}
+          if(it.info)await Dropbox.upload(saved.replace(/\.[^.]+$/,'')+'.txt',new Blob([it.info+'\n'],{type:'text/plain;charset=utf-8'}));
+          await Queue.del(it.name);left--;
+          setHistory(it.name,'done',{savedAs:saved!==it.name?saved:undefined});
+          toast('Im Eingang: '+saved+(it.info?' + Info':''));}
         catch(e){
           if(e.code==='auth'){renderConn();toast('Dropbox ist nicht verbunden. Im Verlauf neu verbinden.',4500);break;}
           if(e.status>=400&&e.status<500&&e.status!==429){setHistory(it.name,'fail');toast('Hochladen abgelehnt: '+e.message,5000);break;}
