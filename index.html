@@ -82,6 +82,12 @@ button{font:inherit;color:inherit}
 .panel .note{font-size:14px;color:var(--muted);text-align:center;margin:0;text-wrap:balance}
 .panel .note b{color:var(--accent);font-weight:500}
 .row{display:flex;gap:10px}.row>.btn{flex:1}
+.info{display:flex;flex-direction:column;gap:6px}
+.info label{font-size:13px;font-weight:500;letter-spacing:.04em;color:var(--muted)}
+.info textarea{font:inherit;font-size:16px;line-height:1.35;background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:12px;
+  padding:10px 12px;width:100%;min-height:46px;max-height:96px;resize:none;-webkit-user-select:text;user-select:text}
+.info textarea:focus{outline:none;border-color:var(--accent)}
+.info textarea::placeholder{color:var(--muted)}
 
 /* sheet: history + setup */
 .sheet{background:var(--bg);overflow:auto;padding:calc(var(--st) + 16px) 16px calc(var(--sb) + 24px)}
@@ -148,6 +154,10 @@ input[type=file]{position:absolute;width:1px;height:1px;opacity:0;pointer-events
   <div class="stage" id="stage"><canvas id="cv"></canvas></div>
   <div class="panel">
     <p class="note" id="rnote"></p>
+    <div class="info">
+      <label for="info">Info für die Buchhaltung (optional)</label>
+      <textarea id="info" rows="1" maxlength="500" enterkeyhint="done" autocapitalize="sentences" placeholder="z. B. Geschäftsessen mit …"></textarea>
+    </div>
     <button class="btn btn-primary" id="send" type="button">Senden</button>
     <div class="row">
       <button class="btn btn-ghost" id="more" type="button">+ Nächstes Stück</button>
