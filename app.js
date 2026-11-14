@@ -2,7 +2,7 @@
 // pieces joined by feature matching, upload straight into the Dropbox _Eingang with an offline queue.
 (function(){
 'use strict';
-const VERSION='1.15';
+const VERSION='1.16';
 const CFG=Object.assign({dropboxAppKey:'',ziel:'/_artedge eU/bookdesk/_Eingang'},window.BELEG_CONFIG||{});
 const $=id=>document.getElementById(id);
 const pad=n=>String(n).padStart(2,'0');
@@ -52,6 +52,9 @@ function toScreen(fx,fy){const vw=video.videoWidth,vh=video.videoHeight,cw=inner
 function iou(a,b){const x0=Math.max(a.x0,b.x0),y0=Math.max(a.y0,b.y0),x1=Math.min(a.x1,b.x1),y1=Math.min(a.y1,b.y1);
   const i=Math.max(0,x1-x0)*Math.max(0,y1-y0),u=(a.x1-a.x0)*(a.y1-a.y0)+(b.x1-b.x0)*(b.y1-b.y0)-i;return u>0?i/u:0;}
 
+// Auto capture: how long the receipt must lie still (1.16: 1000 → 1500 ms) and how far (fraction of the picture)
+// the detected frame may still move before the hold starts again.
+const HOLD_MS=1500,SHIFT=.06;
 const small=document.createElement('canvas'),sctx=small.getContext('2d',{willReadFrequently:true});
 function loop(){
   if(!running)return;
@@ -68,11 +71,12 @@ function loop(){
     if(r.found&&(r.x1-r.x0)*(r.y1-r.y0)<.05)r.found=false;
     // Detection on a hand-held phone flickers from frame to frame: show and judge a smoothed frame,
     // and count the receipt as steady when most recent frames agree with it and the picture is calm.
-    const raw=r.found?r:null;
+    const raw=r.found?r:null;let shifted=false;
     if(raw){
       // a different place only counts after 4 frames in a row; small changes (under ~1.5 %) are ignored
-      if(!smooth||iou(raw,smooth)<.5){jumps++;if(!smooth||jumps>=3){smooth=Object.assign({},raw,{q:raw.q.map(p=>p.slice())});jumps=0;}}
+      if(!smooth||iou(raw,smooth)<.5){jumps++;if(!smooth||jumps>=3){smooth=Object.assign({},raw,{q:raw.q.map(p=>p.slice())});jumps=0;shifted=true;}}
       else{jumps=0;const dev=Math.max(...raw.q.map((p,i)=>Math.max(Math.abs(p[0]-smooth.q[i][0]),Math.abs(p[1]-smooth.q[i][1]))));
+        if(dev>SHIFT)shifted=true;
         if(dev>.015){['x0','y0','x1','y1'].forEach(k=>smooth[k]+=.3*(raw[k]-smooth[k]));
           smooth.q.forEach((p,i)=>{p[0]+=.3*(raw.q[i][0]-p[0]);p[1]+=.3*(raw.q[i][1]-p[1]);});}}
     }
@@ -86,9 +90,10 @@ function loop(){
     const steady=!!live&&frames.length>=3&&agree>=3&&calm;
     if(dbgOn){const dt=frames.length>1?(frames[frames.length-1].t-frames[0].t)/(frames.length-1):0;
       $('dbg').textContent=(dt?Math.round(1000/dt):0)+' B/s · Bewegung '+med.toFixed(0)+(calm?' ruhig':' unruhig')+' · erkannt '+found+'/5 · passt '+agree+' · '+(raw?raw.mode:'-')+' · '+(auto?(needMotion?'wartet auf Bewegung':'scharf'):'Auto aus')+' · '+video.videoWidth+'×'+video.videoHeight;}
-    if(steady){if(!stableSince)stableSince=t0;}else stableSince=0;
-    const held=stableSince?t0-stableSince:0,need=1000;
     const armed=auto&&!needMotion&&t0>=armAt;
+    // 1.16: the hold time only counts while armed and while the frame is not still sliding into place
+    if(steady&&armed&&!shifted){if(!stableSince)stableSince=t0;}else stableSince=0;
+    const held=stableSince?t0-stableSince:0,need=HOLD_MS;
     drawLive(armed?Math.min(1,held/need):0);
     hintLive(armed,held>0);
     if(armed&&held>=need){capture(true);return;}
